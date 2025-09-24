@@ -16,7 +16,7 @@ st.set_page_config(page_title="PWH Input", page_icon="🩸", layout="wide")
 def build_excel_bytes() -> bytes:
     # Ambil semua dataset
     df_patients = run_df("""
-        SELECT id, full_name, birth_place, birth_date, blood_group, rhesus, gender, occupation, address, phone, province, city, created_at
+        SELECT id, full_name, birth_place, birth_date, blood_group, rhesus, gender, occupation, education, address, phone, province, city, created_at
         FROM pwh.patients ORDER BY id
     """)
     df_diag = run_df("""
@@ -100,6 +100,7 @@ def build_bulk_template_bytes() -> bytes:
     blood_groups = BLOOD_GROUPS or ["A","B","AB","O"]
     rhesus = RHESUS or ["+","-"]
     genders = GENDERS or ["Laki-laki", "Perempuan"]
+    education_levels = EDUCATION_LEVELS[1:] if EDUCATION_LEVELS and EDUCATION_LEVELS[0] == "" else EDUCATION_LEVELS
     hemo_types = HEMO_TYPES or ["A","B","vWD","Other"]
     severities = SEVERITY_CHOICES or ["Ringan","Sedang","Berat","Tidak diketahui"]
     inhibitor_factors = INHIB_FACTORS or ["FVIII","FIX"]
@@ -117,7 +118,8 @@ def build_bulk_template_bytes() -> bytes:
             ("full_name", "text"), ("birth_place", "text"), ("birth_date", "date"),
             ("blood_group", ("list", blood_groups)), ("rhesus", ("list", rhesus)),
             ("gender", ("list", genders)),
-            ("occupation", ("list", occupations)), ("address", "text"),
+            ("occupation", ("list", occupations)), ("education", ("list", education_levels)),
+            ("address", "text"),
             ("phone", "text"), ("province", "text"), ("city", "text"), ("note", "text"),
         ],
         "diagnoses": [
@@ -179,7 +181,7 @@ def build_bulk_template_bytes() -> bytes:
         for r, (txt2, sty) in enumerate(readme): ws_readme.write(r, 0, txt2, sty)
 
         ws_lk = wb.add_worksheet("lookups")
-        look_cols = [("blood_groups", blood_groups),("rhesus", rhesus),("genders", genders), ("hemo_types", hemo_types),("severities", severities),("inhibitor_factors", inhibitor_factors),("virus_tests", virus_tests),("test_results", test_results),("relations", relations),("occupations", occupations)]
+        look_cols = [("blood_groups", blood_groups),("rhesus", rhesus),("genders", genders), ("hemo_types", hemo_types),("severities", severities), ("education_levels", education_levels), ("inhibitor_factors", inhibitor_factors),("virus_tests", virus_tests),("test_results", test_results),("relations", relations),("occupations", occupations)]
         for j, (name, items) in enumerate(look_cols):
             ws_lk.write(0, j, name, fmt_header)
             for i, v in enumerate(items, start=1): ws_lk.write(i, j, v)
@@ -322,6 +324,7 @@ def get_all_patients_for_selection():
 BLOOD_GROUPS = [""] + (fetch_enum_vals("blood_group_enum") or ["A","B","AB","O"])
 RHESUS       = [""] + (fetch_enum_vals("rhesus_enum")        or ["+","-"])
 GENDERS      = ["", "Laki-laki", "Perempuan"]
+EDUCATION_LEVELS = [""] + (fetch_enum_vals("education_enum") or ["Tidak sekolah", "SD", "SMP", "SMA/SMK", "Diploma", "S1", "S2", "S3"])
 HEMO_TYPES   = fetch_enum_vals("hemo_type_enum")     or ["A","B","vWD","Other"]
 SEVERITIES   = fetch_enum_vals("severity_enum")      or ["Ringan","Sedang","Berat","Tidak diketahui"]
 INHIB_FACTORS= fetch_enum_vals("inhibitor_factor_enum") or ["FVIII","FIX"]
@@ -341,7 +344,7 @@ def _severity_default_index(choices: list[str]) -> int:
 # ------------------------------------------------------------------------------
 # Alias kolom (header) untuk tampilan
 # ------------------------------------------------------------------------------
-ALIAS_PATIENTS = {"full_name": "Nama Lengkap","birth_place": "Tempat Lahir","birth_date": "Tanggal Lahir","blood_group": "Gol. Darah","rhesus": "Rhesus", "gender": "Jenis Kelamin", "occupation": "Pekerjaan","address": "Alamat","phone": "No. Ponsel","province": "Propinsi","city": "Kabupaten/Kota","created_at": "Dibuat"}
+ALIAS_PATIENTS = {"full_name": "Nama Lengkap","birth_place": "Tempat Lahir","birth_date": "Tanggal Lahir","blood_group": "Gol. Darah","rhesus": "Rhesus", "gender": "Jenis Kelamin", "occupation": "Pekerjaan", "education": "Pendidikan Terakhir", "address": "Alamat","phone": "No. Ponsel","province": "Propinsi","city": "Kabupaten/Kota","created_at": "Dibuat"}
 ALIAS_DIAG = {"full_name": "Nama Lengkap","hemo_type": "Jenis Hemofilia","severity": "Kategori","diagnosed_on": "Tgl Diagnosis","source": "Sumber"}
 ALIAS_INH = {"full_name": "Nama Lengkap","factor": "Faktor","titer_bu": "Titer (BU)","measured_on": "Tgl Ukur","lab": "Lab"}
 ALIAS_VIRUS = {"full_name": "Nama Lengkap","test_type": "Jenis Tes","result": "Hasil","tested_on": "Tgl Tes","lab": "Lab"}
@@ -358,13 +361,13 @@ def _alias_df(df: pd.DataFrame, alias_map: dict) -> pd.DataFrame:
 # Helper Functions (INSERT, UPDATE)
 # ------------------------------------------------------------------------------
 def insert_patient(payload: dict) -> int:
-    sql = "INSERT INTO pwh.patients (full_name, birth_place, birth_date, blood_group, rhesus, gender, occupation, address, phone, province, city, note) VALUES (:full_name, :birth_place, :birth_date, :blood_group, :rhesus, :gender, :occupation, :address, :phone, :province, :city, :note) RETURNING id;"
+    sql = "INSERT INTO pwh.patients (full_name, birth_place, birth_date, blood_group, rhesus, gender, occupation, education, address, phone, province, city, note) VALUES (:full_name, :birth_place, :birth_date, :blood_group, :rhesus, :gender, :occupation, :education, :address, :phone, :province, :city, :note) RETURNING id;"
     with engine.begin() as conn:
         return int(conn.execute(text(sql), payload).scalar())
 
 def update_patient(id: int, payload: dict):
     payload['id'] = id
-    sql = "UPDATE pwh.patients SET full_name=:full_name, birth_place=:birth_place, birth_date=:birth_date, blood_group=:blood_group, rhesus=:rhesus, gender=:gender, occupation=:occupation, address=:address, phone=:phone, province=:province, city=:city, note=:note WHERE id=:id;"
+    sql = "UPDATE pwh.patients SET full_name=:full_name, birth_place=:birth_place, birth_date=:birth_date, blood_group=:blood_group, rhesus=:rhesus, gender=:gender, occupation=:occupation, education=:education, address=:address, phone=:phone, province=:province, city=:city, note=:note WHERE id=:id;"
     run_exec(sql, payload)
 
 def insert_diagnosis(patient_id: int, hemo_type: str, severity: str, diagnosed_on: date | None, source: str | None):
@@ -454,7 +457,7 @@ def import_bulk_excel(file) -> dict:
             return df.fillna(value=None).dropna(how="all")
         return pd.DataFrame(columns=cols)
 
-    pat_cols = ["full_name","birth_place","birth_date","blood_group","rhesus","gender","occupation","address","phone","province","city","note"]
+    pat_cols = ["full_name","birth_place","birth_date","blood_group","rhesus","gender","occupation", "education", "address","phone","province","city","note"]
     df_pat = df_or_empty("patients", pat_cols)
     inserted_patients = []
     
@@ -463,7 +466,8 @@ def import_bulk_excel(file) -> dict:
             "full_name": _safe_str(r.get("full_name")), "birth_place": _safe_str(r.get("birth_place")),
             "birth_date": _to_date(r.get("birth_date")), "blood_group": _safe_str(r.get("blood_group")),
             "rhesus": _safe_str(r.get("rhesus")), "gender": _safe_str(r.get("gender")),
-            "occupation": _safe_str(r.get("occupation")), "address": _safe_str(r.get("address")), 
+            "occupation": _safe_str(r.get("occupation")), "education": _safe_str(r.get("education")),
+            "address": _safe_str(r.get("address")), 
             "phone": _safe_str(r.get("phone")), "province": _safe_str(r.get("province")), 
             "city": _safe_str(r.get("city")), "note": _safe_str(r.get("note"))
         }
@@ -568,7 +572,7 @@ def set_editing_state(state_key, data_id, table_name):
 # TABS (Form Input)
 # ------------------------------------------------------------------------------
 tab_pat, tab_diag, tab_inh, tab_virus, tab_hospital, tab_death, tab_contacts, tab_view, tab_export = st.tabs(
-    ["🧑‍⚕️ Pasien", "🧬 Diagnosis", "🧪 Inhibitor", "🧫 Virus Tests", "🏥 Rumah Sakit Penangan", "⚰️ Kematian", "👨‍👩‍👧 Contacts", "📄 Ringkasan", "⬇️ Export"]
+    ["🧑‍⚕️ Pasien", "🧬 Diagnosis", "🧪 Inhibitor", "🧫 Virus Tests", "🏥 Rumah Sakit Penangan", "⚰️ Kematian", "👨‍👩👧 Contacts", "📄 Ringkasan", "⬇️ Export"]
 )
 
 # Patient
@@ -589,7 +593,7 @@ with tab_pat:
     
     with st.form("patients::form", clear_on_submit=False):
         full_name = st.text_input("Nama Lengkap*", value=pat_data.get('full_name', ''))
-        c1, c2, c3 = st.columns(3)
+        c1, c2, c3, c4 = st.columns(4)
         with c1: birth_place = st.text_input("Tempat Lahir", value=pat_data.get('birth_place', ''))
         with c2:
             birth_date_val = pd.to_datetime(pat_data.get('birth_date')).date() if pd.notna(pat_data.get('birth_date')) else None
@@ -597,15 +601,18 @@ with tab_pat:
         with c3:
             occupation_idx = get_safe_index(occupations_list, pat_data.get('occupation'))
             occupation = st.selectbox("Pekerjaan", occupations_list, index=occupation_idx)
+        with c4:
+            education_idx = get_safe_index(EDUCATION_LEVELS, pat_data.get('education'))
+            education = st.selectbox("Pendidikan Terakhir", EDUCATION_LEVELS, index=education_idx)
         
-        c4, c5, c6 = st.columns(3)
-        with c4: 
+        c5, c6, c7 = st.columns(3)
+        with c5: 
             blood_group_idx = get_safe_index(BLOOD_GROUPS, pat_data.get('blood_group'))
             blood_group = st.selectbox("Golongan Darah", BLOOD_GROUPS, index=blood_group_idx)
-        with c5: 
+        with c6: 
             rhesus_idx = get_safe_index(RHESUS, pat_data.get('rhesus'))
             rhesus = st.selectbox("Rhesus", RHESUS, index=rhesus_idx)
-        with c6:
+        with c7:
             gender_idx = get_safe_index(GENDERS, pat_data.get('gender'))
             gender = st.selectbox("Jenis Kelamin", GENDERS, index=gender_idx)
             
@@ -634,7 +641,8 @@ with tab_pat:
                 "full_name": full_name.strip(), "birth_place": (birth_place or "").strip() or None,
                 "birth_date": birth_date, "blood_group": blood_group or None, "rhesus": rhesus or None,
                 "gender": gender or None,
-                "occupation": occupation or None, "address": (address or "").strip() or None,
+                "occupation": occupation or None, "education": education or None,
+                "address": (address or "").strip() or None,
                 "phone": (phone or "").strip() or None, "province": (province_name or "").strip() or None,
                 "city": city or None, "note": (note or "").strip() or None
             }
@@ -694,7 +702,7 @@ with tab_pat:
             clear_session_state('patient_matches')
             st.rerun()
 
-    dfp = run_df("SELECT id, full_name, birth_place, birth_date, blood_group, rhesus, gender, occupation, address, phone, province, city, created_at FROM pwh.patients ORDER BY id DESC LIMIT 200;")
+    dfp = run_df("SELECT id, full_name, birth_place, birth_date, blood_group, rhesus, gender, occupation, education, address, phone, province, city, created_at FROM pwh.patients ORDER BY id DESC LIMIT 200;")
     
     if not dfp.empty:
         dfp_display = dfp.copy()
