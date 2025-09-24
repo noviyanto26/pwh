@@ -572,7 +572,7 @@ def set_editing_state(state_key, data_id, table_name):
 # TABS (Form Input)
 # ------------------------------------------------------------------------------
 tab_pat, tab_diag, tab_inh, tab_virus, tab_hospital, tab_death, tab_contacts, tab_view, tab_export = st.tabs(
-    ["🧑‍⚕️ Pasien", "🧬 Diagnosis", "🧪 Inhibitor", "🧫 Virus Tests", "🏥 Rumah Sakit Penangan", "⚰️ Kematian", "👨‍👩👧 Contacts", "📄 Ringkasan", "⬇️ Export"]
+    ["🧑‍⚕️ Pasien", "🧬 Diagnosis", "🧪 Inhibitor", "🧫 Virus Tests", "🏥 Rumah Sakit Penangan", "⚰️ Kematian", "👨‍👩‍👧 Contacts", "📄 Ringkasan", "⬇️ Export"]
 )
 
 # Patient
@@ -605,7 +605,7 @@ with tab_pat:
             education_idx = get_safe_index(EDUCATION_LEVELS, pat_data.get('education'))
             education = st.selectbox("Pendidikan Terakhir", EDUCATION_LEVELS, index=education_idx)
         
-        c5, c6, c7 = st.columns(3)
+        c5, c6, c7, c8 = st.columns(4)
         with c5: 
             blood_group_idx = get_safe_index(BLOOD_GROUPS, pat_data.get('blood_group'))
             blood_group = st.selectbox("Golongan Darah", BLOOD_GROUPS, index=blood_group_idx)
@@ -615,9 +615,10 @@ with tab_pat:
         with c7:
             gender_idx = get_safe_index(GENDERS, pat_data.get('gender'))
             gender = st.selectbox("Jenis Kelamin", GENDERS, index=gender_idx)
+        with c8:
+            phone = st.text_input("No. Ponsel", max_chars=50, value=pat_data.get('phone', ''))
             
         address = st.text_area("Alamat", value=pat_data.get('address', ''))
-        phone = st.text_input("No. Ponsel", max_chars=50, value=pat_data.get('phone', ''))
 
         col_city, col_prov = st.columns(2)
         with col_city:
