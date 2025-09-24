@@ -1,4 +1,4 @@
-# 01_pwh_input.py
+# 01_pwh_input.py (Hanya Menampilkan Nama Pasien)
 import os
 import io
 from datetime import date
@@ -309,6 +309,12 @@ def fetch_hospitals() -> list[str]:
         st.warning(f"Gagal mengambil daftar RS: {e}")
         pass
     return ["", "RSUPN Dr. Cipto Mangunkusumo - Jakarta Pusat - DKI Jakarta", "RS Kanker Dharmais - Jakarta Barat - DKI Jakarta"]
+
+# --- FUNGSI BARU UNTUK MENGAMBIL DATA PASIEN ---
+@st.cache_data(show_spinner="Memuat daftar pasien...")
+def get_all_patients_for_selection():
+    """Mengambil daftar pasien dari DB untuk digunakan di selectbox."""
+    return run_df("SELECT id, full_name FROM pwh.patients ORDER BY full_name;")
 
 # ------------------------------------------------------------------------------
 # Definisi Pilihan Statis & Dinamis
@@ -633,8 +639,6 @@ with tab_pat:
                 "city": city or None, "note": (note or "").strip() or None
             }
             if pat_data:
-                # Saat mode edit, nama boleh sama (mengubah data diri sendiri)
-                # tapi tidak boleh sama dengan nama pasien lain.
                 q_check = "SELECT id FROM pwh.patients WHERE lower(full_name) = lower(:name) AND id != :current_id"
                 existing = run_df(q_check, {"name": payload["full_name"], "current_id": pat_data['id']})
                 if not existing.empty:
@@ -646,7 +650,6 @@ with tab_pat:
                     clear_session_state('patient_matches')
                     st.rerun()
             else:
-                # Cek apakah nama sudah ada (case-insensitive)
                 q_check = "SELECT id FROM pwh.patients WHERE lower(full_name) = lower(:name)"
                 existing = run_df(q_check, {"name": payload["full_name"]})
                 if not existing.empty:
@@ -660,11 +663,10 @@ with tab_pat:
     st.markdown("---")
     st.markdown("### 📋 Data Pasien Terbaru")
 
-    # ----- Blok Edit Berdasarkan Nama -----
     st.write("**Edit Data Pasien**")
     search_name_pat = st.text_input("Ketik nama pasien untuk diedit", key="search_name_pat")
     if st.button("Cari Pasien", key="search_pat_button"):
-        clear_session_state('patient_to_edit') # Hapus editan lama
+        clear_session_state('patient_to_edit') 
         if search_name_pat:
             results_df = run_df("SELECT id, full_name, birth_date FROM pwh.patients WHERE full_name ILIKE :name", {"name": f"%{search_name_pat}%"})
             if results_df.empty:
@@ -691,18 +693,15 @@ with tab_pat:
             set_editing_state('patient_to_edit', selected_id, 'pwh.patients')
             clear_session_state('patient_matches')
             st.rerun()
-    # ----- Akhir Blok Edit -----
 
     dfp = run_df("SELECT id, full_name, birth_place, birth_date, blood_group, rhesus, gender, occupation, address, phone, province, city, created_at FROM pwh.patients ORDER BY id DESC LIMIT 200;")
     
     if not dfp.empty:
         dfp_display = dfp.copy()
-        # Sembunyikan data sensitif
         dfp_display['birth_place'] = dfp_display['birth_place'].apply(lambda x: '*****' if pd.notna(x) and str(x).strip() else x)
         dfp_display['birth_date'] = dfp_display['birth_date'].apply(lambda x: '*****' if pd.notna(x) else x)
         dfp_display['phone'] = dfp_display['phone'].apply(lambda x: '*****' if pd.notna(x) and str(x).strip() else x)
         
-        # Sembunyikan kolom ID dan buat nomor urut
         dfp_display = dfp_display.drop(columns=['id'], errors='ignore')
         dfp_display.index = range(1, len(dfp_display) + 1)
         dfp_display.index.name = "No."
@@ -712,6 +711,24 @@ with tab_pat:
     else:
         st.info("Belum ada data pasien.")
 
+# ==============================================================================
+# --- Blok Kode Umum untuk Semua Tab Lainnya ---
+# ==============================================================================
+
+# Ambil data pasien sekali saja untuk semua tab
+df_all_patients = get_all_patients_for_selection()
+patient_id_map = df_all_patients.set_index('id')['full_name'].to_dict()
+
+def format_patient_name(patient_id):
+    """Fungsi untuk menampilkan nama pasien di selectbox."""
+    if pd.isna(patient_id):
+        return "Pilih pasien..."
+    return patient_id_map.get(patient_id, "ID tidak ditemukan")
+
+# Siapkan daftar ID untuk opsi, tambahkan None di awal untuk placeholder
+patient_id_options = [None] + df_all_patients['id'].tolist()
+
+# ==============================================================================
 # Diagnosis
 with tab_diag:
     st.subheader("🧬 Tambah Data Diagnosis Pasien")
@@ -724,17 +741,18 @@ with tab_diag:
             clear_session_state('diag_to_edit')
             clear_session_state('diag_matches')
             st.rerun()
-            
-    df_pat_diag = run_df("SELECT id, full_name FROM pwh.patients ORDER BY id DESC;")
+
+    # Tentukan pilihan default jika dalam mode edit
+    default_patient_id = diag_data.get('patient_id') if diag_data else None
     
-    default_pid_index = 0
-    if diag_data and 'patient_id' in diag_data:
-        selected_patient_id_diag = diag_data['patient_id']
-        pat_ids = df_pat_diag['id'].tolist()
-        if selected_patient_id_diag in pat_ids:
-            default_pid_index = pat_ids.index(selected_patient_id_diag)
-    
-    pid_diag = st.selectbox("Pilih Pasien (untuk data baru)", df_pat_diag["id"], index=default_pid_index, format_func=lambda x: f"{x} — {df_pat_diag.set_index('id').loc[x,'full_name']}", key="diag_pid", disabled=bool(diag_data))
+    pid_diag = st.selectbox(
+        "Pilih Pasien (untuk data baru)",
+        options=patient_id_options,
+        index=patient_id_options.index(default_patient_id) if default_patient_id in patient_id_options else 0,
+        format_func=format_patient_name,
+        key="diag_patient_selector",
+        disabled=bool(diag_data)
+    )
 
     with st.form("diag::form", clear_on_submit=False):
         hemo_type_idx = get_safe_index(HEMO_TYPES, diag_data.get('hemo_type'))
@@ -754,18 +772,16 @@ with tab_diag:
             update_diagnosis(diag_data['id'], payload)
             st.success("Diagnosis diperbarui.")
             clear_session_state('diag_to_edit')
-            clear_session_state('diag_matches')
             st.rerun()
         elif pid_diag:
-            # Logika ON CONFLICT di DB sudah menangani duplikasi (patient_id, hemo_type)
             insert_diagnosis(int(pid_diag), hemo_type, severity, diagnosed_on, source)
-            st.success("Diagnosis disimpan/diperbarui. Jika pasien sudah punya tipe diagnosis yang sama, data akan diupdate.")
+            st.success("Diagnosis disimpan/diperbarui.")
             st.rerun()
+        else:
+            if not diag_data: st.warning("Silakan pilih pasien terlebih dahulu.")
 
     st.markdown("---")
     st.markdown("### 📋 Data Diagnosis Terbaru")
-
-    # ----- Blok Edit Berdasarkan Nama (LOGIKA BARU) -----
     st.write("**Edit Data Diagnosis**")
     search_name_diag = st.text_input("Ketik nama pasien untuk mencari riwayat dan mengedit", key="search_name_diag")
     if st.button("Cari Riwayat Diagnosis", key="search_diag_button"):
@@ -837,20 +853,14 @@ with tab_inh:
             clear_session_state('inh_matches')
             st.rerun()
 
-    df_pat_inh = run_df("SELECT id, full_name FROM pwh.patients ORDER BY id DESC;")
-    default_pid_index_inh = 0
-    if inh_data and 'patient_id' in inh_data:
-        selected_patient_id_inh = inh_data['patient_id']
-        pat_ids_inh = df_pat_inh['id'].tolist()
-        if selected_patient_id_inh in pat_ids_inh:
-            default_pid_index_inh = pat_ids_inh.index(selected_patient_id_inh)
-
+    default_patient_id_inh = inh_data.get('patient_id') if inh_data else None
+    
     pid_inh = st.selectbox(
         "Pilih Pasien (untuk data baru)",
-        df_pat_inh["id"],
-        index=default_pid_index_inh,
-        format_func=lambda x: f"{x} — {df_pat_inh.set_index('id').loc[x,'full_name']}",
-        key="inh_pid",
+        options=patient_id_options,
+        index=patient_id_options.index(default_patient_id_inh) if default_patient_id_inh in patient_id_options else 0,
+        format_func=format_patient_name,
+        key="inh_patient_selector",
         disabled=bool(inh_data)
     )
 
@@ -870,22 +880,17 @@ with tab_inh:
             update_inhibitor(inh_data['id'], payload)
             st.success("Riwayat inhibitor diperbarui.")
             clear_session_state('inh_to_edit')
-            clear_session_state('inh_matches')
             st.rerun()
         elif pid_inh:
-            q_check = "SELECT id FROM pwh.hemo_inhibitors WHERE patient_id = :pid AND factor = :factor AND measured_on = :date"
-            existing = run_df(q_check, {"pid": int(pid_inh), "factor": factor, "date": measured_on})
-            if not existing.empty:
-                st.error(f"Data inhibitor untuk pasien ini dengan faktor '{factor}' pada tanggal yang sama sudah ada (ID: {existing.iloc[0]['id']}).")
-            else:
-                insert_inhibitor(int(pid_inh), factor, float(titer_bu), measured_on, lab)
-                st.success("Riwayat inhibitor ditambahkan.")
-                st.rerun()
+            insert_inhibitor(int(pid_inh), factor, float(titer_bu), measured_on, lab)
+            st.success("Riwayat inhibitor ditambahkan.")
+            st.rerun()
+        else:
+             if not inh_data: st.warning("Silakan pilih pasien terlebih dahulu.")
 
     st.markdown("---")
     st.markdown("### 📋 Data Inhibitor Terbaru")
-
-    # ----- Blok Edit Berdasarkan Nama (LOGIKA BARU) -----
+    
     st.write("**Edit Data Inhibitor**")
     search_name_inh = st.text_input("Ketik nama pasien untuk mencari riwayat dan mengedit", key="search_name_inh")
     if st.button("Cari Riwayat Inhibitor", key="search_inh_button"):
@@ -903,12 +908,12 @@ with tab_inh:
             results_df = run_df(q, {"name": f"%{search_name_inh}%"})
 
             if results_df.empty:
-                st.warning("Riwayat inhibitor tidak ditemukan untuk pasien dengan nama tersebut.")
+                st.warning("Riwayat inhibitor tidak ditemukan.")
             elif len(results_df) == 1:
                 set_editing_state('inh_to_edit', results_df.iloc[0]['id'], 'pwh.hemo_inhibitors')
                 st.rerun()
             else:
-                st.info(f"Ditemukan {len(results_df)} riwayat inhibitor. Silakan pilih satu untuk diedit.")
+                st.info(f"Ditemukan {len(results_df)} riwayat. Silakan pilih satu.")
                 st.session_state.inh_matches = results_df
         else:
             st.warning("Silakan masukkan nama untuk dicari.")
@@ -920,7 +925,7 @@ with tab_inh:
             f"ID: {row['id']} - {row['factor']} (Tgl: {row['measured_on']})": row['id']
             for _, row in df_matches.iterrows()
         }
-        selected_option = st.selectbox("Pilih riwayat inhibitor yang akan diedit:", options.keys(), key="select_inh_box")
+        selected_option = st.selectbox("Pilih riwayat inhibitor:", options.keys(), key="select_inh_box")
         if st.button("Pilih Riwayat Ini", key="select_inh_button"):
             selected_id = options[selected_option]
             set_editing_state('inh_to_edit', selected_id, 'pwh.hemo_inhibitors')
@@ -942,7 +947,7 @@ with tab_inh:
         st.write(f"Total Data Inhibitor: **{len(df_inh_display)}**")
         st.dataframe(_alias_df(df_inh_display, ALIAS_INH), use_container_width=True)
     else:
-        st.info("Tidak ada data inhibitor untuk ditampilkan. Cari nama pasien di atas untuk memfilter.")
+        st.info("Tidak ada data inhibitor untuk ditampilkan.")
 
 # Virus Tests
 with tab_virus:
@@ -956,15 +961,16 @@ with tab_virus:
             clear_session_state('virus_matches')
             st.rerun()
 
-    df_pat_virus = run_df("SELECT id, full_name FROM pwh.patients ORDER BY id DESC;")
-    default_pid_index_virus = 0
-    if virus_data and 'patient_id' in virus_data:
-        selected_patient_id_virus = virus_data['patient_id']
-        pat_ids_virus = df_pat_virus['id'].tolist()
-        if selected_patient_id_virus in pat_ids_virus:
-            default_pid_index_virus = pat_ids_virus.index(selected_patient_id_virus)
-
-    pid_virus = st.selectbox("Pilih Pasien (untuk data baru)", df_pat_virus["id"], index=default_pid_index_virus, format_func=lambda x: f"{x} — {df_pat_virus.set_index('id').loc[x,'full_name']}", key="virus_pid", disabled=bool(virus_data))
+    default_patient_id_virus = virus_data.get('patient_id') if virus_data else None
+    
+    pid_virus = st.selectbox(
+        "Pilih Pasien (untuk data baru)",
+        options=patient_id_options,
+        index=patient_id_options.index(default_patient_id_virus) if default_patient_id_virus in patient_id_options else 0,
+        format_func=format_patient_name,
+        key="virus_patient_selector",
+        disabled=bool(virus_data)
+    )
 
     with st.form("virus::form", clear_on_submit=False):
         test_type_idx = get_safe_index(VIRUS_TESTS, virus_data.get('test_type'))
@@ -983,18 +989,17 @@ with tab_virus:
             update_virus_test(virus_data['id'], payload)
             st.success("Hasil tes diperbarui.")
             clear_session_state('virus_to_edit')
-            clear_session_state('virus_matches')
             st.rerun()
         elif pid_virus:
-            # Logika ON CONFLICT di DB sudah menangani duplikasi (patient_id, test_type, tested_on)
             insert_virus_test(int(pid_virus), test_type, result, tested_on, lab)
-            st.success("Hasil tes disimpan. Jika ada data identik (pasien, jenis tes, tgl tes), data tidak akan diduplikasi.")
+            st.success("Hasil tes disimpan.")
             st.rerun()
+        else:
+            if not virus_data: st.warning("Silakan pilih pasien terlebih dahulu.")
 
     st.markdown("---")
     st.markdown("### 📋 Data Tes Virus Terbaru")
     
-    # ----- Blok Edit Berdasarkan Nama (LOGIKA BARU) -----
     st.write("**Edit Data Tes Virus**")
     search_name_virus = st.text_input("Ketik nama pasien untuk mencari riwayat dan mengedit", key="search_name_virus")
     if st.button("Cari Riwayat Tes Virus", key="search_virus_button"):
@@ -1012,12 +1017,12 @@ with tab_virus:
             results_df = run_df(q, {"name": f"%{search_name_virus}%"})
 
             if results_df.empty:
-                st.warning("Riwayat tes virus tidak ditemukan untuk pasien dengan nama tersebut.")
+                st.warning("Riwayat tes virus tidak ditemukan.")
             elif len(results_df) == 1:
                 set_editing_state('virus_to_edit', results_df.iloc[0]['id'], 'pwh.virus_tests')
                 st.rerun()
             else:
-                st.info(f"Ditemukan {len(results_df)} riwayat tes virus. Silakan pilih satu untuk diedit.")
+                st.info(f"Ditemukan {len(results_df)} riwayat. Silakan pilih satu.")
                 st.session_state.virus_matches = results_df
         else:
             st.warning("Silakan masukkan nama untuk dicari.")
@@ -1029,7 +1034,7 @@ with tab_virus:
             f"ID: {row['id']} - {row['test_type']}: {row['result']} (Tgl: {row['tested_on']})": row['id']
             for _, row in df_matches.iterrows()
         }
-        selected_option = st.selectbox("Pilih riwayat tes yang akan diedit:", options.keys(), key="select_virus_box")
+        selected_option = st.selectbox("Pilih riwayat tes:", options.keys(), key="select_virus_box")
         if st.button("Pilih Riwayat Ini", key="select_virus_button"):
             selected_id = options[selected_option]
             set_editing_state('virus_to_edit', selected_id, 'pwh.virus_tests')
@@ -1046,7 +1051,6 @@ with tab_virus:
     df_virus = run_df(query_virus, params_virus)
 
     if not df_virus.empty:
-        # PERUBAHAN DI SINI: Salin dataframe dan samarkan kolom 'result'
         df_virus_display = df_virus.copy()
         df_virus_display['result'] = '*****'
         
@@ -1056,7 +1060,7 @@ with tab_virus:
         st.write(f"Total Data Tes Virus: **{len(df_virus_display)}**")
         st.dataframe(_alias_df(df_virus_display, ALIAS_VIRUS), use_container_width=True)
     else:
-        st.info("Tidak ada data tes virus untuk ditampilkan. Cari nama pasien di atas untuk memfilter.")
+        st.info("Tidak ada data tes virus untuk ditampilkan.")
 
 
 # Rumah Sakit Penangan
@@ -1071,15 +1075,16 @@ with tab_hospital:
             clear_session_state('hosp_matches')
             st.rerun()
             
-    df_pat_hosp = run_df("SELECT id, full_name FROM pwh.patients ORDER BY id DESC;")
-    default_pid_index_hosp = 0
-    if hosp_data and 'patient_id' in hosp_data:
-        selected_patient_id_hosp = hosp_data['patient_id']
-        pat_ids_hosp = df_pat_hosp['id'].tolist()
-        if selected_patient_id_hosp in pat_ids_hosp:
-            default_pid_index_hosp = pat_ids_hosp.index(selected_patient_id_hosp)
-
-    pid_hosp = st.selectbox("Pilih Pasien (untuk data baru)", df_pat_hosp["id"], index=default_pid_index_hosp, format_func=lambda x: f"{x} — {df_pat_hosp.set_index('id').loc[x,'full_name']}", key="hospital_pid", disabled=bool(hosp_data))
+    default_patient_id_hosp = hosp_data.get('patient_id') if hosp_data else None
+    
+    pid_hosp = st.selectbox(
+        "Pilih Pasien (untuk data baru)",
+        options=patient_id_options,
+        index=patient_id_options.index(default_patient_id_hosp) if default_patient_id_hosp in patient_id_options else 0,
+        format_func=format_patient_name,
+        key="hosp_patient_selector",
+        disabled=bool(hosp_data)
+    )
     
     with st.form("hospital::form", clear_on_submit=False):
         hospital_list = fetch_hospitals()
@@ -1113,29 +1118,18 @@ with tab_hospital:
                 update_treatment_hospital(hosp_data['id'], payload)
                 st.success("Data penanganan diperbarui.")
                 clear_session_state('hosp_to_edit')
-                clear_session_state('hosp_matches')
                 st.rerun()
             elif pid_hosp:
                 payload['patient_id'] = int(pid_hosp)
-                q_check = """
-                    SELECT id FROM pwh.treatment_hospital 
-                    WHERE patient_id = :pid AND name_hospital = :hosp 
-                    AND COALESCE(treatment_type, '') = COALESCE(:ttype, '')
-                    AND COALESCE(product, '') = COALESCE(:prod, '')
-                """
-                params_check = {"pid": payload['patient_id'], "hosp": payload['name_hospital'], "ttype": payload['treatment_type'], "prod": payload['product']}
-                existing = run_df(q_check, params_check)
-                if not existing.empty:
-                    st.error(f"Data penanganan yang identik untuk pasien ini sudah ada (ID: {existing.iloc[0]['id']}).")
-                else:
-                    insert_treatment_hospital(payload)
-                    st.success("Data penanganan disimpan.")
-                    st.rerun()
+                insert_treatment_hospital(payload)
+                st.success("Data penanganan disimpan.")
+                st.rerun()
+            else:
+                if not hosp_data: st.warning("Silakan pilih pasien terlebih dahulu.")
             
     st.markdown("---")
     st.markdown("### 📋 Data Penanganan RS Terbaru")
     
-    # ----- Blok Edit Berdasarkan Nama (LOGIKA BARU) -----
     st.write("**Edit Data Penanganan RS**")
     search_name_hosp = st.text_input("Ketik nama pasien untuk mencari riwayat dan mengedit", key="search_name_hosp")
     if st.button("Cari Riwayat Penanganan", key="search_hosp_button"):
@@ -1153,12 +1147,12 @@ with tab_hospital:
             results_df = run_df(q, {"name": f"%{search_name_hosp}%"})
 
             if results_df.empty:
-                st.warning("Riwayat penanganan RS tidak ditemukan untuk pasien dengan nama tersebut.")
+                st.warning("Riwayat penanganan RS tidak ditemukan.")
             elif len(results_df) == 1:
                 set_editing_state('hosp_to_edit', results_df.iloc[0]['id'], 'pwh.treatment_hospital')
                 st.rerun()
             else:
-                st.info(f"Ditemukan {len(results_df)} riwayat penanganan. Silakan pilih satu untuk diedit.")
+                st.info(f"Ditemukan {len(results_df)} riwayat. Silakan pilih satu.")
                 st.session_state.hosp_matches = results_df
         else:
             st.warning("Silakan masukkan nama untuk dicari.")
@@ -1170,7 +1164,7 @@ with tab_hospital:
             f"ID: {row['id']} - {row['name_hospital']} ({row['product']})": row['id']
             for _, row in df_matches.iterrows()
         }
-        selected_option = st.selectbox("Pilih riwayat penanganan yang akan diedit:", options.keys(), key="select_hosp_box")
+        selected_option = st.selectbox("Pilih riwayat penanganan:", options.keys(), key="select_hosp_box")
         if st.button("Pilih Riwayat Ini", key="select_hosp_button"):
             selected_id = options[selected_option]
             set_editing_state('hosp_to_edit', selected_id, 'pwh.treatment_hospital')
@@ -1193,7 +1187,7 @@ with tab_hospital:
         st.write(f"Total Data Penanganan: **{len(df_th_display)}**")
         st.dataframe(_alias_df(df_th_display, ALIAS_HOSPITAL), use_container_width=True)
     else:
-        st.info("Tidak ada data penanganan RS untuk ditampilkan. Cari nama pasien di atas untuk memfilter.")
+        st.info("Tidak ada data penanganan RS untuk ditampilkan.")
 
 # Kematian
 with tab_death:
@@ -1205,16 +1199,17 @@ with tab_death:
         if st.button("❌ Batal Edit", key="cancel_death_edit"):
             clear_session_state('death_to_edit')
             st.rerun()
+    
+    default_patient_id_death = death_data.get('patient_id') if death_data else None
 
-    df_pat_death = run_df("SELECT id, full_name FROM pwh.patients ORDER BY id DESC;")
-    default_pid_index_death = 0
-    if death_data and 'patient_id' in death_data:
-        selected_patient_id_death = death_data['patient_id']
-        pat_ids_death = df_pat_death['id'].tolist()
-        if selected_patient_id_death in pat_ids_death:
-            default_pid_index_death = pat_ids_death.index(selected_patient_id_death)
-
-    pid_death = st.selectbox("Pilih Pasien (untuk data baru)", df_pat_death["id"], index=default_pid_index_death, format_func=lambda x: f"{x} — {df_pat_death.set_index('id').loc[x,'full_name']}", key="death_pid", disabled=bool(death_data))
+    pid_death = st.selectbox(
+        "Pilih Pasien (untuk data baru)",
+        options=patient_id_options,
+        index=patient_id_options.index(default_patient_id_death) if default_patient_id_death in patient_id_options else 0,
+        format_func=format_patient_name,
+        key="death_patient_selector",
+        disabled=bool(death_data)
+    )
 
     with st.form("death::form", clear_on_submit=False):
         cause_of_death = st.text_area("Penyebab Kematian", value=death_data.get('cause_of_death', ''))
@@ -1237,15 +1232,15 @@ with tab_death:
             st.rerun()
         elif pid_death:
             payload['patient_id'] = int(pid_death)
-            # Logika ON CONFLICT di DB sudah memastikan hanya ada 1 data per pasien
             insert_death_record(payload)
-            st.success("Data kematian disimpan. Jika pasien sudah punya data kematian, data akan diupdate.")
+            st.success("Data kematian disimpan.")
             st.rerun()
+        else:
+            if not death_data: st.warning("Silakan pilih pasien terlebih dahulu.")
 
     st.markdown("---")
     st.markdown("### 📋 Data Kematian Terbaru")
 
-    # ----- Blok Edit Berdasarkan Nama (LOGIKA BARU) -----
     st.write("**Edit Data Kematian**")
     search_name_death = st.text_input("Ketik nama pasien untuk mencari & mengedit", key="search_name_death")
     if st.button("Cari Data Kematian", key="search_death_button"):
@@ -1260,7 +1255,7 @@ with tab_death:
             """
             results_df = run_df(q, {"name": f"%{search_name_death}%"})
             if results_df.empty:
-                st.warning("Data kematian tidak ditemukan untuk pasien dengan nama tersebut.")
+                st.warning("Data kematian tidak ditemukan.")
             else:
                 set_editing_state('death_to_edit', results_df.iloc[0]['id'], 'pwh.death')
                 st.rerun()
@@ -1284,7 +1279,7 @@ with tab_death:
         st.write(f"Total Data Kematian: **{len(df_death_display)}**")
         st.dataframe(_alias_df(df_death_display, ALIAS_DEATH), use_container_width=True)
     else:
-        st.info("Tidak ada data kematian untuk ditampilkan. Cari nama pasien di atas untuk memfilter.")
+        st.info("Tidak ada data kematian untuk ditampilkan.")
 
 
 # Contacts
@@ -1298,17 +1293,18 @@ with tab_contacts:
             clear_session_state('contact_to_edit')
             clear_session_state('contact_matches')
             st.rerun()
-
-    df_pat_cont = run_df("SELECT id, full_name FROM pwh.patients ORDER BY id DESC;")
-    default_pid_index_cont = 0
-    if cont_data and 'patient_id' in cont_data:
-        selected_patient_id_cont = cont_data['patient_id']
-        pat_ids_cont = df_pat_cont['id'].tolist()
-        if selected_patient_id_cont in pat_ids_cont:
-            default_pid_index_cont = pat_ids_cont.index(selected_patient_id_cont)
-
-    pid_cont = st.selectbox("Pilih Pasien (untuk data baru)", df_pat_cont["id"], index=default_pid_index_cont, format_func=lambda x: f"{x} — {df_pat_cont.set_index('id').loc[x,'full_name']}", key="contact_pid", disabled=bool(cont_data))
-
+    
+    default_patient_id_cont = cont_data.get('patient_id') if cont_data else None
+    
+    pid_cont = st.selectbox(
+        "Pilih Pasien (untuk data baru)",
+        options=patient_id_options,
+        index=patient_id_options.index(default_patient_id_cont) if default_patient_id_cont in patient_id_options else 0,
+        format_func=format_patient_name,
+        key="cont_patient_selector",
+        disabled=bool(cont_data)
+    )
+    
     with st.form("contact::form", clear_on_submit=False):
         relation_idx = get_safe_index(RELATIONS, cont_data.get('relation'))
         relation = st.selectbox("Relasi", RELATIONS, index=relation_idx)
@@ -1326,30 +1322,20 @@ with tab_contacts:
         else:
             payload = {"relation": relation, "name": name, "phone": (phone or "").strip() or None, "is_primary": is_primary}
             if cont_data:
-                q_check = "SELECT id FROM pwh.contacts WHERE patient_id = :pid AND relation = :relation AND id != :current_id"
-                existing = run_df(q_check, {"pid": cont_data['patient_id'], "relation": relation, "current_id": cont_data['id']})
-                if not existing.empty:
-                    st.error(f"Pasien ini sudah memiliki kontak lain dengan relasi '{relation}'.")
-                else:
-                    update_contact(cont_data['id'], payload)
-                    st.success("Kontak diperbarui.")
-                    clear_session_state('contact_to_edit')
-                    clear_session_state('contact_matches')
-                    st.rerun()
+                update_contact(cont_data['id'], payload)
+                st.success("Kontak diperbarui.")
+                clear_session_state('contact_to_edit')
+                st.rerun()
             elif pid_cont:
-                q_check = "SELECT id FROM pwh.contacts WHERE patient_id = :pid AND relation = :relation"
-                existing = run_df(q_check, {"pid": int(pid_cont), "relation": relation})
-                if not existing.empty:
-                    st.error(f"Pasien ini sudah memiliki kontak dengan relasi '{relation}' (ID: {existing.iloc[0]['id']}). Gunakan fitur edit jika ingin mengubah.")
-                else:
-                    insert_contact(int(pid_cont), relation, name, phone, is_primary)
-                    st.success("Kontak baru ditambahkan.")
-                    st.rerun()
+                insert_contact(int(pid_cont), relation, name, phone, is_primary)
+                st.success("Kontak baru ditambahkan.")
+                st.rerun()
+            else:
+                if not cont_data: st.warning("Silakan pilih pasien terlebih dahulu.")
 
     st.markdown("---")
     st.markdown("### 📋 Data Kontak Terbaru")
     
-    # ----- Blok Edit Berdasarkan Nama (LOGIKA BARU) -----
     st.write("**Edit Data Kontak**")
     search_name_cont = st.text_input("Ketik nama pasien untuk mencari riwayat dan mengedit", key="search_name_cont")
     if st.button("Cari Kontak", key="search_cont_button"):
@@ -1367,12 +1353,12 @@ with tab_contacts:
             results_df = run_df(q, {"name": f"%{search_name_cont}%"})
 
             if results_df.empty:
-                st.warning("Kontak tidak ditemukan untuk pasien dengan nama tersebut.")
+                st.warning("Kontak tidak ditemukan.")
             elif len(results_df) == 1:
                 set_editing_state('contact_to_edit', results_df.iloc[0]['id'], 'pwh.contacts')
                 st.rerun()
             else:
-                st.info(f"Ditemukan {len(results_df)} kontak. Silakan pilih satu untuk diedit.")
+                st.info(f"Ditemukan {len(results_df)} kontak. Silakan pilih satu.")
                 st.session_state.contact_matches = results_df
         else:
             st.warning("Silakan masukkan nama untuk dicari.")
@@ -1384,7 +1370,7 @@ with tab_contacts:
             f"ID: {row['id']} - {row['name']} ({row['relation']})": row['id']
             for _, row in df_matches.iterrows()
         }
-        selected_option = st.selectbox("Pilih kontak yang akan diedit:", options.keys(), key="select_cont_box")
+        selected_option = st.selectbox("Pilih kontak:", options.keys(), key="select_cont_box")
         if st.button("Pilih Kontak Ini", key="select_cont_button"):
             selected_id = options[selected_option]
             set_editing_state('contact_to_edit', selected_id, 'pwh.contacts')
@@ -1406,7 +1392,7 @@ with tab_contacts:
         st.write(f"Total Data Kontak: **{len(df_contacts_display)}**")
         st.dataframe(_alias_df(df_contacts_display, ALIAS_CONTACTS), use_container_width=True)
     else:
-        st.info("Tidak ada data kontak untuk ditampilkan. Cari nama pasien di atas untuk memfilter.")
+        st.info("Tidak ada data kontak untuk ditampilkan.")
 
 # Summary View
 with tab_view:
@@ -1415,7 +1401,6 @@ with tab_view:
     if df.empty:
         st.info("Belum ada data.")
     else:
-        # PERUBAHAN DI SINI: Salin dataframe dan samarkan beberapa kolom
         df_summary_display = df.copy()
         df_summary_display['Lahir: Tempat'] = '*****'
         df_summary_display['Lahir: Tanggal'] = '*****'
