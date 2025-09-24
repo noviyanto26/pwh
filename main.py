@@ -63,8 +63,8 @@ MENU_ITEMS = {
 }
 
 # --- Sidebar untuk Navigasi ---
-st.sidebar.title("Navigasi")
-st.sidebar.success("Anda berhasil login!") # Notifikasi login berhasil
+st.sidebar.title("Menu")
+st.sidebar.success("Anda berhasil login") # Notifikasi login berhasil
 selection = st.sidebar.radio("Pilih Halaman:", list(MENU_ITEMS.keys()))
 
 # Tombol Logout di sidebar
