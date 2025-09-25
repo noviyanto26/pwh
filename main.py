@@ -68,6 +68,7 @@ MENU_ITEMS = {
 # App
 # -----------------------------
 def main():
+    st.title("📊 Pendataan Penyandang Hemofilia")
     # Cek login
     if not check_password():
         return
