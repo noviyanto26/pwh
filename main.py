@@ -1,83 +1,112 @@
-# main.py (dengan Indentasi yang Benar)
-import streamlit as st
+# main.py
 import runpy
-from pathlib import Path
+import streamlit as st
+from streamlit_option_menu import option_menu
 
-# --- Konfigurasi Halaman Utama ---
+# -----------------------------
+# Konfigurasi halaman
+# -----------------------------
 st.set_page_config(
-    page_title="🩸 Dashboard PWH",
+    page_title="PWH Dashboard",
     page_icon="🩸",
-    layout="wide"
+    layout="wide",
+    initial_sidebar_state="expanded",
 )
 
-# --- Fungsi Autentikasi ---
-def check_password():
-    """Mengembalikan True jika pengguna sudah diautentikasi."""
-    # Cek apakah kunci 'authenticated' sudah ada di session_state
-    if "authenticated" not in st.session_state:
-        st.session_state["authenticated"] = False
+# -----------------------------
+# Auth sederhana via st.secrets
+# -----------------------------
+def check_password() -> bool:
+    # Pastikan secrets tersedia
+    if "credentials" not in st.secrets or "usernames" not in st.secrets["credentials"]:
+        st.error("❌ Konfigurasi kredensial di secrets.toml tidak ditemukan.")
+        st.caption(
+            "Tambahkan di Secrets (Streamlit Cloud) / .streamlit/secrets.toml (lokal):\n"
+            "[credentials]\n  [credentials.usernames]\n    admin = \"passwordAnda\""
+        )
+        return False
 
-    # Jika sudah diautentikasi, langsung kembalikan True
-    if st.session_state["authenticated"]:
+    users = st.secrets["credentials"]["usernames"]  # dict: {username: password}
+
+    # Sudah login di session?
+    if st.session_state.get("auth_ok", False):
         return True
 
-    # --- Tampilkan Form Login ---
-    st.title("🔐 Halaman Login")
-    
-    # Ambil daftar username dari st.secrets
-    try:
-        users = st.secrets["credentials"]["usernames"]
-        usernames = list(users.keys())
-    except (KeyError, AttributeError):
-        st.error("❌ Konfigurasi kredensial di secrets.toml tidak ditemukan.")
-        return False
-        
-    username = st.text_input("Username")
-    password = st.text_input("Password", type="password")
+    # Form login
+    with st.sidebar:
+        st.markdown("### 🔐 Login")
+        username = st.text_input("Username", key="login_username")
+        password = st.text_input("Password", type="password", key="login_password")
+        login = st.button("Masuk")
 
-    if st.button("Login"):
-        # Verifikasi username dan password
-        if username in usernames and password == users[username]:
-            st.session_state["authenticated"] = True
-            st.rerun()  # Muat ulang halaman setelah login berhasil
+    if login:
+        expected_pw = users.get(username)
+        if expected_pw and password == str(expected_pw):
+            st.session_state.auth_ok = True
+            st.session_state.username = username
+            st.success(f"Selamat datang, **{username}**!")
+            return True
         else:
-            st.error("😕 Username atau password salah.")
-    
+            st.error("Username atau password salah.")
+            return False
+
+    # Belum login → hentikan render halaman
+    st.stop()
     return False
 
-# --- Logika Utama Aplikasi ---
-# Panggil fungsi check_password. 
-# Jika hasilnya False, kode di bawah tidak akan dijalankan.
-if not check_password():
-    st.stop() # Menghentikan eksekusi script jika belum login
 
-# ===================================================================
-# APLIKASI UTAMA (HANYA TAMPIL SETELAH LOGIN BERHASIL)
-# ===================================================================
-
-# --- Definisi Menu ---
+# -----------------------------
+# Daftar halaman (judul → file)
+# -----------------------------
 MENU_ITEMS = {
     "📝 Input Data Pasien": "01_pwh_input.py",
     "📊 Rekapitulasi per Kelompok Usia": "02_rekap_pwh.py",
-    "🚻 Rekapitulasi per Jenis Kelamin": "03_rekap_gender.py"
+    "🚻 Rekapitulasi per Jenis Kelamin": "03_rekap_gender.py",
 }
 
-# --- Sidebar untuk Navigasi ---
-st.sidebar.title("Menu")
-st.sidebar.success("Anda berhasil login") # Notifikasi login berhasil
-selection = st.sidebar.radio("Pilih Halaman:", list(MENU_ITEMS.keys()))
+# -----------------------------
+# App
+# -----------------------------
+def main():
+    st.title("📊 PWH Streamlit App")
 
-# Tombol Logout di sidebar
-if st.sidebar.button("Logout"):
-    st.session_state["authenticated"] = False
-    st.rerun()
+    # Cek login
+    if not check_password():
+        return
 
-# --- Logika untuk Menjalankan Halaman yang Dipilih ---
-file_to_run = MENU_ITEMS[selection]
-file_path = Path(file_to_run)
+    # Sidebar header + tombol logout
+    with st.sidebar:
+        st.markdown("### 📁 Menu")
+        selection = option_menu(
+            menu_title="",  # biar minimalis
+            options=list(MENU_ITEMS.keys()),
+            icons=["pencil-square", "bar-chart", "person-arms-up"],  # bebas ganti
+            default_index=0,
+            orientation="vertical",
+        )
 
-if file_path.is_file():
-    runpy.run_path(str(file_path))
-else:
-    st.error(f"File tidak ditemukan: {file_to_run}")
-    st.warning("Pastikan file berada di direktori yang sama dengan main.py")
+        st.divider()
+        col1, col2 = st.columns([1, 1])
+        with col1:
+            st.caption(f"👤 {st.session_state.get('username', '')}")
+        with col2:
+            if st.button("Logout", use_container_width=True):
+                st.session_state.clear()
+                st.rerun()
+
+    # Muat halaman sesuai pilihan
+    page_path = MENU_ITEMS[selection]
+    try:
+        runpy.run_path(page_path, run_name="__main__")
+    except FileNotFoundError:
+        st.error(f"File halaman tidak ditemukan: `{page_path}`")
+    except Exception as e:
+        st.exception(e)
+
+    # Footer kecil
+    st.markdown("---")
+    st.caption("© PWH Dashboard — Streamlit")
+
+
+if __name__ == "__main__":
+    main()
