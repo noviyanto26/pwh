@@ -68,8 +68,6 @@ MENU_ITEMS = {
 # App
 # -----------------------------
 def main():
-    st.title("📊 PWH Streamlit App")
-
     # Cek login
     if not check_password():
         return
