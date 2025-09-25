@@ -655,6 +655,7 @@ with tab_pat:
                 else:
                     update_patient(pat_data['id'], payload)
                     st.success(f"Pasien dengan ID {pat_data['id']} berhasil diperbarui.")
+                    get_all_patients_for_selection.clear()
                     clear_session_state('patient_to_edit')
                     clear_session_state('patient_matches')
                     st.rerun()
@@ -666,6 +667,7 @@ with tab_pat:
                 else:
                     pid = insert_patient(payload)
                     st.success(f"Pasien baru berhasil disimpan dengan ID: {pid}")
+                    get_all_patients_for_selection.clear()
                     st.rerun()
 
 
