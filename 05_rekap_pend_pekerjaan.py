@@ -1,135 +1,176 @@
-# 04_rs_hemofilia.py
-import streamlit as st
+# 03_rekap_pendidikan_pekerjaan.py
+import os
+import io
 import pandas as pd
+import streamlit as st
+from sqlalchemy import create_engine, text
+from sqlalchemy.engine import Engine
+import matplotlib.pyplot as plt
 
-# --- KONFIGURASI HALAMAN ---
+# ========================= Konfigurasi Halaman =========================
 st.set_page_config(
-    page_title="Data Rumah Sakit Perawatan Hemofilia",
-    page_icon="🏥",
+    page_title="Rekap Pendidikan & Pekerjaan",
+    page_icon="📚",
     layout="wide"
 )
-
-# --- KONEKSI DAN FUNGSI PENGAMBILAN DATA ---
-
-# Inisialisasi koneksi ke database PostgreSQL (diambil dari .streamlit/secrets.toml)
-conn = st.connection("postgresql", type="sql")
-
-@st.cache_data(ttl="10m")
-def load_data():
-    """
-    Menjalankan query ke database dan mengembalikan hasilnya sebagai DataFrame.
-    """
-    query = "SELECT * FROM pwh.rumah_sakit_perawatan_hemofilia ORDER BY no;"
-    df = conn.query(query)
-
-    # Pastikan kolom boolean bertipe benar (True/False/NA)
-    for col in ["terdapat_dokter_hematologi", "terdapat_tim_terpadu_hemofilia"]:
-        if col in df.columns:
-            df[col] = df[col].astype("boolean")
-    return df
-
-# --- ALIAS KOL0M UNTUK TAMPILAN ---
-COL_ALIAS = {
-    "no": "No",
-    "provinsi": "Propinsi",
-    "nama_rumah_sakit": "Nama Rumah Sakit",
-    "tipe_rs": "Tipe RS",
-    "terdapat_dokter_hematologi": "Terdapat Dokter Hematologi",
-    "terdapat_tim_terpadu_hemofilia": "Terdapat Tim Terpadu Hemofilia",
-}
-
-DISPLAY_COL_ORDER = [
-    "no",
-    "provinsi",
-    "nama_rumah_sakit",
-    "tipe_rs",
-    "terdapat_dokter_hematologi",
-    "terdapat_tim_terpadu_hemofilia",
-]
-
-def alias_for_display(df: pd.DataFrame) -> pd.DataFrame:
-    cols = [c for c in DISPLAY_COL_ORDER if c in df.columns]
-    view = df[cols].copy() if cols else df.copy()
-    return view.rename(columns={k: v for k, v in COL_ALIAS.items() if k in view.columns})
-
-# --- TAMPILAN APLIKASI ---
-st.title("🏥 Dashboard Data Rumah Sakit Perawatan Hemofilia")
+st.title("📚 Rekap Pendidikan & 💼 Pekerjaan")
 st.markdown(
-    "Gunakan **Filter Data** di bawah untuk menyaring tampilan. "
-    "Secara default, semua rumah sakit ditampilkan."
+    "Halaman ini menampilkan **rekapitulasi** dan **grafik** berdasarkan "
+    "`occupation` (pekerjaan) dan `education` (pendidikan terakhir) dari tabel **pwh.patients**."
 )
 
-try:
-    df = load_data()
+# ========================= Koneksi Database =========================
+def _resolve_db_url() -> str:
+    """Mencari DATABASE_URL dari st.secrets atau environment variables."""
+    try:
+        sec = st.secrets.get("DATABASE_URL", "")
+        if sec:
+            return sec
+    except Exception:
+        pass
+    env = os.environ.get("DATABASE_URL")
+    if env:
+        return env
+    st.error("DATABASE_URL tidak ditemukan. Atur di `.streamlit/secrets.toml` atau sebagai environment variable.")
+    st.code('DATABASE_URL = "postgresql://USER:PASSWORD@HOST:PORT/DATABASE"')
+    return None
 
-    # ================== FILTER DI HALAMAN UTAMA ==================
-    st.subheader("🔎 Filter Data")
+@st.cache_resource(show_spinner="🔌 Menghubungkan ke database...")
+def get_engine(dsn: str) -> Engine:
+    if not dsn:
+        st.stop()
+    try:
+        engine = create_engine(dsn, pool_pre_ping=True)
+        with engine.connect() as conn:
+            conn.execute(text("SELECT 1"))
+        return engine
+    except Exception as e:
+        st.error(f"Gagal terhubung ke database: {e}")
+        st.stop()
 
-    c1, c2, c3 = st.columns([1.2, 1, 1])
+# ========================= Query Data =========================
+def _fetch_count_by_column(engine: Engine, column: str, alias: str) -> pd.DataFrame:
+    """
+    Mengambil rekap jumlah per nilai kolom pada pwh.patients.
+    - ENUM/string di-cast ke text agar TRIM/NULLIF/COALESCE aman
+    - Nilai NULL/blank dinormalisasi jadi 'Unknown'
+    Return: [alias(asli), jumlah, persentase]
+    """
+    st.info(f"🔄 Mengambil rekap '{alias}' dari database...")
+    q = text(f"""
+        SELECT
+            COALESCE(NULLIF(TRIM({column}::text), ''), 'Unknown') AS {alias},
+            COUNT(*)::int AS jumlah
+        FROM pwh.patients
+        GROUP BY 1
+        ORDER BY jumlah DESC, {alias} ASC;
+    """)
+    try:
+        with engine.connect() as conn:
+            df = pd.read_sql(q, conn)
+        total = int(df["jumlah"].sum()) if not df.empty else 0
+        df["persentase"] = (df["jumlah"] / total * 100).round(2) if total > 0 else 0.0
+        return df
+    except Exception as e:
+        st.error(f"Gagal mengambil rekap '{alias}' dari pwh.patients: {e}")
+        return pd.DataFrame(columns=[alias, "jumlah", "persentase"])
 
-    with c1:
-        # Pilih Propinsi: selectbox (single) dengan default "Semua Propinsi"
-        provinsi_list = sorted([p for p in df["provinsi"].dropna().unique()])
-        provinsi_options = ["Semua Propinsi"] + provinsi_list
-        provinsi_pilihan = st.selectbox("Pilih Propinsi", options=provinsi_options, index=0)
+# ========================= Util Aliasing & Export =========================
+def _localized(df: pd.DataFrame, domain: str) -> pd.DataFrame:
+    """
+    Kembalikan DataFrame dengan alias kolom ID:
+    - domain='occupation' -> Pekerjaan, Jumlah, Persentase
+    - domain='education'  -> Pendidikan Terakhir, Jumlah, Persentase
+    """
+    if df.empty:
+        return df
+    if domain == "occupation":
+        return df.rename(columns={
+            "occupation": "Pekerjaan",
+            "jumlah": "Jumlah",
+            "persentase": "Persentase"
+        })
+    elif domain == "education":
+        return df.rename(columns={
+            "education": "Pendidikan Terakhir",
+            "jumlah": "Jumlah",
+            "persentase": "Persentase"
+        })
+    return df
 
-    with c2:
-        dokter_option = st.selectbox(
-            "Ketersediaan Dokter Hematologi",
-            options=["Semua", "Ada", "Tidak Ada", "Data Kosong"],
-            index=0,
+def _to_excel_bytes(df: pd.DataFrame, sheet_name: str = "Data") -> bytes:
+    """Mengubah DataFrame ke file Excel (bytes)."""
+    output = io.BytesIO()
+    with pd.ExcelWriter(output, engine="openpyxl") as writer:
+        df.to_excel(writer, sheet_name=sheet_name, index=False)
+    return output.getvalue()
+
+# ========================= Plotting =========================
+def plot_bar(df: pd.DataFrame, label_col: str, value_col: str, title: str, xlabel_text: str) -> plt.Figure:
+    fig, ax = plt.subplots(figsize=(14, 7))
+    df_sorted = df.sort_values(by=value_col, ascending=False)
+    ax.bar(df_sorted[label_col].astype(str), df_sorted[value_col])
+    ax.set_title(title, fontsize=16)
+    ax.set_xlabel(xlabel_text, fontsize=12)
+    ax.set_ylabel("Jumlah", fontsize=12)
+    ax.tick_params(axis='x', labelrotation=45)
+    for lbl in ax.get_xticklabels():
+        lbl.set_ha('right')
+    fig.tight_layout()
+    return fig
+
+# ========================= Main =========================
+db_url = _resolve_db_url()
+engine = get_engine(db_url)
+
+col_occ, col_edu = st.columns(2)
+
+with col_occ:
+    st.subheader("💼 Rekapitulasi Pekerjaan")
+    df_occ_raw = _fetch_count_by_column(engine, "occupation", "occupation")
+    if df_occ_raw.empty:
+        st.warning("Tidak ada data pekerjaan yang dapat ditampilkan.")
+    else:
+        # Tabel & unduh Excel dengan alias Indonesia
+        df_occ_view = _localized(df_occ_raw, domain="occupation")
+        st.dataframe(
+            df_occ_view.style.format({"Persentase": "{:.2f}%"}),
+            use_container_width=True
         )
-
-    with c3:
-        tim_option = st.selectbox(
-            "Ketersediaan Tim Terpadu Hemofilia",
-            options=["Semua", "Ada", "Tidak Ada", "Data Kosong"],
-            index=0,
+        st.download_button(
+            "📥 Download Rekap Pekerjaan (Excel)",
+            data=_to_excel_bytes(df_occ_view, sheet_name="Rekap_Pekerjaan"),
+            file_name="rekap_pekerjaan.xlsx",
+            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
         )
+        st.markdown(" ")
+        # Grafik tetap pakai kolom asli untuk kemudahan pemrosesan
+        fig_occ = plot_bar(df_occ_raw, "occupation", "jumlah", "Distribusi Pekerjaan", "Pekerjaan")
+        st.pyplot(fig_occ)
 
-    # ================== PROSES FILTER ==================
-    df_filtered = df.copy()
+with col_edu:
+    st.subheader("🎓 Rekapitulasi Pendidikan Terakhir")
+    df_edu_raw = _fetch_count_by_column(engine, "education", "education")
+    if df_edu_raw.empty:
+        st.warning("Tidak ada data pendidikan yang dapat ditampilkan.")
+    else:
+        df_edu_view = _localized(df_edu_raw, domain="education")
+        st.dataframe(
+            df_edu_view.style.format({"Persentase": "{:.2f}%"}),
+            use_container_width=True
+        )
+        st.download_button(
+            "📥 Download Rekap Pendidikan (Excel)",
+            data=_to_excel_bytes(df_edu_view, sheet_name="Rekap_Pendidikan"),
+            file_name="rekap_pendidikan.xlsx",
+            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+        )
+        st.markdown(" ")
+        fig_edu = plot_bar(df_edu_raw, "education", "jumlah", "Distribusi Pendidikan Terakhir", "Pendidikan Terakhir")
+        st.pyplot(fig_edu)
 
-    # Filter Propinsi (hanya jika bukan "Semua Propinsi")
-    if provinsi_pilihan != "Semua Propinsi":
-        df_filtered = df_filtered[df_filtered["provinsi"] == provinsi_pilihan]
-
-    # Filter Dokter Hematologi
-    if dokter_option == "Ada":
-        df_filtered = df_filtered[df_filtered["terdapat_dokter_hematologi"] == True]
-    elif dokter_option == "Tidak Ada":
-        df_filtered = df_filtered[df_filtered["terdapat_dokter_hematologi"] == False]
-    elif dokter_option == "Data Kosong":
-        df_filtered = df_filtered[df_filtered["terdapat_dokter_hematologi"].isna()]
-
-    # Filter Tim Terpadu Hemofilia
-    if tim_option == "Ada":
-        df_filtered = df_filtered[df_filtered["terdapat_tim_terpadu_hemofilia"] == True]
-    elif tim_option == "Tidak Ada":
-        df_filtered = df_filtered[df_filtered["terdapat_tim_terpadu_hemofilia"] == False]
-    elif tim_option == "Data Kosong":
-        df_filtered = df_filtered[df_filtered["terdapat_tim_terpadu_hemofilia"].isna()]
-
-    # ================== TABEL & STATISTIK ==================
-    st.header(f"Tabel Data Rumah Sakit ({len(df_filtered)} data ditemukan)")
-    st.dataframe(
-        alias_for_display(df_filtered),
-        use_container_width=True,
-        hide_index=True
-    )
-
-    st.header("Statistik Singkat")
-    col1, col2, col3 = st.columns(3)
-    with col1:
-        st.metric("Total RS Tercatat", len(df))
-    with col2:
-        st.metric("RS Dengan Dokter Hematologi", int((df["terdapat_dokter_hematologi"] == True).sum()))
-    with col3:
-        st.metric("RS Dengan Tim Terpadu", int((df["terdapat_tim_terpadu_hemofilia"] == True).sum()))
-
-except Exception as e:
-    st.error(f"Gagal terhubung ke database atau mengambil data: {e}")
-    st.info(
-        "Pastikan file `.streamlit/secrets.toml` sudah dikonfigurasi dengan benar "
-        "dan database PostgreSQL Anda sedang berjalan."
-    )
+st.markdown("---")
+st.caption(
+    "Sumber data: **pwh.patients** (kolom `occupation` dan `education`). "
+    "Nilai kosong/NULL dipetakan ke **'Unknown'** agar tetap terhitung."
+)
