@@ -272,7 +272,7 @@ if db_url:
 
             # Unduh persis sesuai schema (4 kolom)
             st.download_button(
-                "📥 Download Rekap (Excel, sesuai schema)",
+                "📥 Download Rekap",
                 data=_to_excel_bytes(df_view, sheet_name="Rekap_RS"),
                 file_name="rekap_rs_schema.xlsx",
                 mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
