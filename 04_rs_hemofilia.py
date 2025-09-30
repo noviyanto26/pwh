@@ -44,14 +44,17 @@ def get_engine(dsn: str) -> Engine:
 
 # --- FUNGSI PENGAMBILAN DATA ---
 
+# --- PERUBAHAN DI SINI ---
+# Nama argumen 'engine' diubah menjadi '_engine' untuk mengatasi error UnhashableParamError.
 @st.cache_data(ttl="10m")
-def load_data_dashboard(engine: Engine) -> pd.DataFrame:
+def load_data_dashboard(_engine: Engine) -> pd.DataFrame:
     """
     Menjalankan query ke database untuk data dashboard utama.
     Data ini di-cache karena tidak sering berubah.
     """
     query = text("SELECT * FROM pwh.rumah_sakit_perawatan_hemofilia ORDER BY no;")
-    with engine.connect() as conn:
+    # Gunakan '_engine' di dalam fungsi
+    with _engine.connect() as conn:
         df = pd.read_sql(query, conn)
 
     # Pastikan kolom boolean bertipe benar (True/False/NA)
@@ -59,8 +62,8 @@ def load_data_dashboard(engine: Engine) -> pd.DataFrame:
         if col in df.columns:
             df[col] = df[col].astype("boolean")
     return df
+# --- AKHIR PERUBAHAN ---
 
-# PERUBAHAN UTAMA: Fungsi ini sekarang mirip dengan fetch_data_for_gender
 def fetch_data_rekap_rs(engine: Engine) -> pd.DataFrame:
     """
     Mengambil rekap jumlah pasien dari pwh.treatment_hospital.
