@@ -16,7 +16,7 @@ st.set_page_config(
 # Inisialisasi koneksi ke database PostgreSQL (diambil dari .streamlit/secrets.toml)
 conn = st.connection("postgresql", type="sql")
 
-@st.cache_data(ttl="10m")
+# PERUBAHAN 1: Dekorator @st.cache_data dihapus dari sini
 def load_data_dashboard():
     """
     Menjalankan query ke database untuk data dashboard utama.
@@ -30,7 +30,7 @@ def load_data_dashboard():
             df[col] = df[col].astype("boolean")
     return df
 
-@st.cache_data(ttl="10m")
+# PERUBAHAN 2: Dekorator @st.cache_data dihapus dari sini
 def load_data_rekap_rs():
     """
     Mengambil rekap jumlah pasien berdasarkan rumah sakit penanganan dari pwh.treatment_hospital.
@@ -166,6 +166,8 @@ try:
     # ================== KONTEN TAB 2: REKAPITULASI RS PENANGANAN ==================
     with tab2:
         st.subheader("📈 Rekapitulasi Jumlah Pasien Berdasarkan Rumah Sakit Penanganan")
+        
+        # Karena cache sudah dihapus, fungsi ini akan selalu mengambil data terbaru dari DB
         df_rekap_raw = load_data_rekap_rs()
 
         if df_rekap_raw.empty:
