@@ -36,7 +36,7 @@ def build_excel_bytes() -> bytes:
     """)
     df_hospital = run_df("""
         SELECT th.id, th.patient_id, p.full_name, th.name_hospital, th.city_hospital, th.province_hospital,
-               th.treatment_type, th.care_services, th.frequency, th.dose, th.product, th.merk
+               th.date_of_visit, th.doctor_in_charge, th.treatment_type, th.care_services, th.frequency, th.dose, th.product, th.merk
         FROM pwh.treatment_hospital th JOIN pwh.patients p ON p.id = th.patient_id
         ORDER BY th.patient_id, th.id
     """)
@@ -140,6 +140,7 @@ def build_bulk_template_bytes() -> bytes:
         "treatment_hospitals": [
             ("patient_id", "int"), ("full_name", "text"),
             ("name_hospital", "text"), ("city_hospital", "text"), ("province_hospital", "text"),
+            ("date_of_visit", "date"), ("doctor_in_charge", "text"),
             ("treatment_type", ("list", treatment_types)),
             ("care_services", ("list", care_services)),
             ("frequency", "text"), ("dose", "text"),
@@ -348,7 +349,7 @@ ALIAS_PATIENTS = {"full_name": "Nama Lengkap","birth_place": "Tempat Lahir","bir
 ALIAS_DIAG = {"full_name": "Nama Lengkap","hemo_type": "Jenis Hemofilia","severity": "Kategori","diagnosed_on": "Tgl Diagnosis","source": "Sumber"}
 ALIAS_INH = {"full_name": "Nama Lengkap","factor": "Faktor","titer_bu": "Titer (BU)","measured_on": "Tgl Ukur","lab": "Lab"}
 ALIAS_VIRUS = {"full_name": "Nama Lengkap","test_type": "Jenis Tes","result": "Hasil","tested_on": "Tgl Tes","lab": "Lab"}
-ALIAS_HOSPITAL = {"full_name": "Nama Lengkap","name_hospital": "Nama RS","city_hospital": "Kota RS","province_hospital": "Provinsi RS","treatment_type": "Jenis Penanganan","care_services": "Layanan Rawat","frequency": "Frekuensi","dose": "Dosis","product": "Produk","merk": "Merk"}
+ALIAS_HOSPITAL = {"full_name": "Nama Lengkap","name_hospital": "Nama RS","city_hospital": "Kota RS","province_hospital": "Provinsi RS", "date_of_visit": "Tanggal Kunjungan", "doctor_in_charge": "DPJP", "treatment_type": "Jenis Penanganan","care_services": "Layanan Rawat","frequency": "Frekuensi","dose": "Dosis","product": "Produk","merk": "Merk"}
 ALIAS_DEATH = {"full_name": "Nama Lengkap", "cause_of_death": "Penyebab Kematian", "year_of_death": "Tahun Kematian"}
 ALIAS_CONTACTS = {"full_name": "Nama Lengkap","relation": "Relasi","name": "Nama Kontak","phone": "No. Telp","is_primary": "Primary"}
 ALIAS_SUMMARY = {"Nama Lengkap": "Nama Lengkap","Lahir: Tempat": "Tempat Lahir","Lahir: Tanggal": "Tanggal Lahir","Gol. Darah": "Gol. Darah","Rhesus": "Rhesus","Pekerjaan": "Pekerjaan","vWD": "vWD","Kategori Hemofilia A": "Kategori A","Kategori Hemofilia B": "Kategori B","Inhibitor FVIII (BU)": "FVIII (BU)","Inhibitor FIX (BU)": "FIX (BU)","HBsAg": "HBsAg","Anti HCV": "Anti-HCV","HIV": "HIV","Alamat": "Alamat","No. Telp": "No. Telp","Org Tua: Ayah": "Ayah","Org Tua: Ibu": "Ibu","Umur (tahun)": "Umur"}
@@ -398,12 +399,22 @@ def update_virus_test(id: int, payload: dict):
     run_exec(sql, payload)
 
 def insert_treatment_hospital(payload: dict):
-    sql = "INSERT INTO pwh.treatment_hospital (patient_id, name_hospital, city_hospital, province_hospital, treatment_type, care_services, frequency, dose, product, merk) VALUES (:patient_id, :name_hospital, :city_hospital, :province_hospital, :treatment_type, :care_services, :frequency, :dose, :product, :merk);"
+    sql = """
+        INSERT INTO pwh.treatment_hospital 
+        (patient_id, name_hospital, city_hospital, province_hospital, date_of_visit, doctor_in_charge, treatment_type, care_services, frequency, dose, product, merk) 
+        VALUES (:patient_id, :name_hospital, :city_hospital, :province_hospital, :date_of_visit, :doctor_in_charge, :treatment_type, :care_services, :frequency, :dose, :product, :merk);
+    """
     run_exec(sql, payload)
 
 def update_treatment_hospital(id: int, payload: dict):
     payload['id'] = id
-    sql = "UPDATE pwh.treatment_hospital SET name_hospital=:name_hospital, city_hospital=:city_hospital, province_hospital=:province_hospital, treatment_type=:treatment_type, care_services=:care_services, frequency=:frequency, dose=:dose, product=:product, merk=:merk WHERE id=:id;"
+    sql = """
+        UPDATE pwh.treatment_hospital SET 
+        name_hospital=:name_hospital, city_hospital=:city_hospital, province_hospital=:province_hospital, 
+        date_of_visit=:date_of_visit, doctor_in_charge=:doctor_in_charge,
+        treatment_type=:treatment_type, care_services=:care_services, frequency=:frequency, dose=:dose, product=:product, merk=:merk 
+        WHERE id=:id;
+    """
     run_exec(sql, payload)
 
 def insert_death_record(payload: dict):
@@ -492,9 +503,10 @@ def import_bulk_excel(file) -> dict:
         "diagnoses": ("diagnoses", ["patient_id","full_name","hemo_type","severity","diagnosed_on","source"], lambda r, pid: insert_diagnosis(pid, _safe_str(r.get("hemo_type")), _safe_str(r.get("severity")), _to_date(r.get("diagnosed_on")), _safe_str(r.get("source")))),
         "inhibitors": ("inhibitors", ["patient_id","full_name","factor","titer_bu","measured_on","lab"], lambda r, pid: insert_inhibitor(pid, _safe_str(r.get("factor")), pd.to_numeric(r.get("titer_bu"), errors='coerce'), _to_date(r.get("measured_on")), _safe_str(r.get("lab")))),
         "virus_tests": ("virus_tests", ["patient_id","full_name","test_type","result","tested_on","lab"], lambda r, pid: insert_virus_test(pid, _safe_str(r.get("test_type")), _safe_str(r.get("result")), _to_date(r.get("tested_on")), _safe_str(r.get("lab")))),
-        "treatment_hospitals": ("treatment_hospitals", ["patient_id", "full_name", "name_hospital", "city_hospital", "province_hospital", "treatment_type", "care_services", "frequency", "dose", "product", "merk"],
+        "treatment_hospitals": ("treatment_hospitals", ["patient_id", "full_name", "name_hospital", "city_hospital", "province_hospital", "date_of_visit", "doctor_in_charge", "treatment_type", "care_services", "frequency", "dose", "product", "merk"],
             lambda r, pid: insert_treatment_hospital({
                 "patient_id": pid, "name_hospital": _safe_str(r.get("name_hospital")), "city_hospital": _safe_str(r.get("city_hospital")), "province_hospital": _safe_str(r.get("province_hospital")),
+                "date_of_visit": _to_date(r.get("date_of_visit")), "doctor_in_charge": _safe_str(r.get("doctor_in_charge")),
                 "treatment_type": _safe_str(r.get("treatment_type")), "care_services": _safe_str(r.get("care_services")), "frequency": _safe_str(r.get("frequency")), "dose": _safe_str(r.get("dose")),
                 "product": _safe_str(r.get("product")), "merk": _safe_str(r.get("merk"))
             })
@@ -1103,6 +1115,14 @@ with tab_hospital:
         hosp_val = f"{name_h} - {city_h} - {prov_h}" if all([name_h, city_h, prov_h]) else ''
         hosp_idx = get_safe_index(hospital_list, hosp_val)
         hospital_selection = st.selectbox("Nama Rumah Sakit*", hospital_list, index=hosp_idx)
+        
+        col_date, col_doc = st.columns(2)
+        with col_date:
+            visit_date_val = pd.to_datetime(hosp_data.get('date_of_visit')).date() if pd.notna(hosp_data.get('date_of_visit')) else None
+            date_of_visit = st.date_input("Tanggal Kunjungan", value=visit_date_val, format="YYYY-MM-DD")
+        with col_doc:
+            doctor_in_charge = st.text_input("DPJP", value=hosp_data.get('doctor_in_charge', ''))
+
         col1, col2 = st.columns(2)
         with col1:
             ttype_idx = get_safe_index(TREATMENT_TYPES, hosp_data.get('treatment_type'))
@@ -1124,7 +1144,13 @@ with tab_hospital:
         else:
             parts = hospital_selection.split(' - ')
             name_h, city_h, prov_h = (parts[0].strip(), parts[1].strip(), parts[2].strip()) if len(parts) == 3 else (hospital_selection, None, None)
-            payload = { "name_hospital": name_h, "city_hospital": city_h, "province_hospital": prov_h, "treatment_type": treatment_type or None, "care_services": care_services or None, "frequency": (frequency or "").strip() or None, "dose": (dose or "").strip() or None, "product": product or None, "merk": (merk or "").strip() or None, }
+            payload = { 
+                "name_hospital": name_h, "city_hospital": city_h, "province_hospital": prov_h, 
+                "date_of_visit": date_of_visit, "doctor_in_charge": (doctor_in_charge or "").strip() or None,
+                "treatment_type": treatment_type or None, "care_services": care_services or None, 
+                "frequency": (frequency or "").strip() or None, "dose": (dose or "").strip() or None, 
+                "product": product or None, "merk": (merk or "").strip() or None, 
+            }
             if hosp_data:
                 update_treatment_hospital(hosp_data['id'], payload)
                 st.success("Data penanganan diperbarui.")
@@ -1150,7 +1176,7 @@ with tab_hospital:
 
         if search_name_hosp:
             q = """
-                SELECT th.id, p.full_name, th.name_hospital, th.treatment_type, th.product
+                SELECT th.id, p.full_name, th.name_hospital, th.date_of_visit, th.product
                 FROM pwh.treatment_hospital th
                 JOIN pwh.patients p ON p.id = th.patient_id
                 WHERE p.full_name ILIKE :name ORDER BY th.id DESC
@@ -1172,7 +1198,7 @@ with tab_hospital:
     if 'hosp_matches' in st.session_state and not st.session_state.hosp_matches.empty:
         df_matches = st.session_state.hosp_matches
         options = {
-            f"ID: {row['id']} - {row['name_hospital']} ({row['product']})": row['id']
+            f"ID: {row['id']} - {row['name_hospital']} (Kunjungan: {row['date_of_visit']})": row['id']
             for _, row in df_matches.iterrows()
         }
         selected_option = st.selectbox("Pilih riwayat penanganan:", options.keys(), key="select_hosp_box")
@@ -1182,7 +1208,7 @@ with tab_hospital:
             clear_session_state('hosp_matches')
             st.rerun()
 
-    query_hosp = "SELECT th.id, th.patient_id, p.full_name, th.name_hospital, th.city_hospital, th.province_hospital, th.treatment_type, th.care_services, th.frequency, th.dose, th.product, th.merk FROM pwh.treatment_hospital th JOIN pwh.patients p ON p.id = th.patient_id"
+    query_hosp = "SELECT th.id, th.patient_id, p.full_name, th.name_hospital, th.city_hospital, th.province_hospital, th.date_of_visit, th.doctor_in_charge, th.treatment_type, th.care_services, th.frequency, th.dose, th.product, th.merk FROM pwh.treatment_hospital th JOIN pwh.patients p ON p.id = th.patient_id"
     params_hosp = {}
     if 'hosp_selected_patient_name' in st.session_state and st.session_state.hosp_selected_patient_name:
         query_hosp += " WHERE p.full_name ILIKE :name"
