@@ -1,8 +1,11 @@
 # 04_rs_hemofilia.py
+import os
+import io
 import streamlit as st
 import pandas as pd
-import io
 import matplotlib.pyplot as plt
+from sqlalchemy import create_engine, text
+from sqlalchemy.engine import Engine
 
 # --- KONFIGURASI HALAMAN ---
 st.set_page_config(
@@ -11,18 +14,45 @@ st.set_page_config(
     layout="wide"
 )
 
-# --- KONEKSI DAN FUNGSI PENGAMBILAN DATA ---
+# --- KONEKSI DATABASE (Mengadopsi pola dari 03_rekap_gender.py) ---
+def _resolve_db_url() -> str:
+    """Mencari DATABASE_URL dari st.secrets atau environment variables."""
+    try:
+        sec = st.secrets.get("DATABASE_URL", "")
+        if sec: return sec
+    except Exception:
+        pass
+    env = os.environ.get("DATABASE_URL")
+    if env: return env
+    
+    st.error('DATABASE_URL tidak ditemukan. Mohon atur di `.streamlit/secrets.toml`.')
+    return None
 
-# Inisialisasi koneksi ke database PostgreSQL (diambil dari .streamlit/secrets.toml)
-conn = st.connection("postgresql", type="sql")
+@st.cache_resource(show_spinner="Menghubungkan ke database...")
+def get_engine(dsn: str) -> Engine:
+    """Membuat dan menyimpan koneksi database engine."""
+    if not dsn:
+        st.stop()
+    try:
+        engine = create_engine(dsn, pool_pre_ping=True)
+        with engine.connect() as conn:
+            conn.execute(text("SELECT 1"))
+        return engine
+    except Exception as e:
+        st.error(f"Gagal terhubung ke database: {e}")
+        st.stop()
 
-# PERUBAHAN 1: Dekorator @st.cache_data dihapus dari sini
-def load_data_dashboard():
+# --- FUNGSI PENGAMBILAN DATA ---
+
+@st.cache_data(ttl="10m")
+def load_data_dashboard(engine: Engine) -> pd.DataFrame:
     """
     Menjalankan query ke database untuk data dashboard utama.
+    Data ini di-cache karena tidak sering berubah.
     """
-    query = "SELECT * FROM pwh.rumah_sakit_perawatan_hemofilia ORDER BY no;"
-    df = conn.query(query)
+    query = text("SELECT * FROM pwh.rumah_sakit_perawatan_hemofilia ORDER BY no;")
+    with engine.connect() as conn:
+        df = pd.read_sql(query, conn)
 
     # Pastikan kolom boolean bertipe benar (True/False/NA)
     for col in ["terdapat_dokter_hematologi", "terdapat_tim_terpadu_hemofilia"]:
@@ -30,25 +60,33 @@ def load_data_dashboard():
             df[col] = df[col].astype("boolean")
     return df
 
-# PERUBAHAN 2: Dekorator @st.cache_data dihapus dari sini
-def load_data_rekap_rs():
+# PERUBAHAN UTAMA: Fungsi ini sekarang mirip dengan fetch_data_for_gender
+def fetch_data_rekap_rs(engine: Engine) -> pd.DataFrame:
     """
-    Mengambil rekap jumlah pasien berdasarkan rumah sakit penanganan dari pwh.treatment_hospital.
+    Mengambil rekap jumlah pasien dari pwh.treatment_hospital.
+    Fungsi ini TIDAK DI-CACHE untuk memastikan data selalu terbaru.
     """
-    query = """
+    st.info("🔄 Mengambil data rekapitulasi terbaru dari database...")
+    query = text("""
         SELECT
             COALESCE(NULLIF(TRIM(name_hospital), ''), 'Data Tidak Disediakan') AS nama_rumah_sakit,
             COUNT(*)::int AS jumlah_pasien
         FROM pwh.treatment_hospital
         GROUP BY 1
         ORDER BY jumlah_pasien DESC, nama_rumah_sakit ASC;
-    """
-    df = conn.query(query)
-    total = int(df["jumlah_pasien"].sum()) if not df.empty else 0
-    df["persentase"] = (df["jumlah_pasien"] / total * 100).round(2) if total > 0 else 0.0
-    return df
+    """)
+    try:
+        with engine.connect() as conn:
+            df = pd.read_sql(query, conn)
+        total = int(df["jumlah_pasien"].sum()) if not df.empty else 0
+        df["persentase"] = (df["jumlah_pasien"] / total * 100).round(2) if total > 0 else 0.0
+        return df
+    except Exception as e:
+        st.error(f"Gagal mengambil data rekapitulasi: {e}")
+        return pd.DataFrame()
 
-# --- FUNGSI UTILITAS (diambil dari contoh 05) ---
+
+# --- FUNGSI UTILITAS ---
 
 def _to_excel_bytes(df: pd.DataFrame, sheet_name: str = "Data") -> bytes:
     """Mengubah DataFrame ke file Excel (bytes)."""
@@ -60,7 +98,7 @@ def _to_excel_bytes(df: pd.DataFrame, sheet_name: str = "Data") -> bytes:
 def plot_bar(df: pd.DataFrame, label_col: str, value_col: str, title: str, xlabel_text: str) -> plt.Figure:
     """Membuat grafik batang dari DataFrame."""
     fig, ax = plt.subplots(figsize=(14, 8))
-    df_sorted = df.sort_values(by=value_col, ascending=True) # Ascending=True agar bar horizontal rapi
+    df_sorted = df.sort_values(by=value_col, ascending=True)
     ax.barh(df_sorted[label_col].astype(str), df_sorted[value_col])
     ax.set_title(title, fontsize=16)
     ax.set_xlabel("Jumlah Pasien", fontsize=12)
@@ -95,7 +133,10 @@ def alias_for_display(df: pd.DataFrame) -> pd.DataFrame:
 # --- TAMPILAN APLIKASI ---
 st.title("🏥 Dashboard Rumah Sakit Hemofilia")
 
-try:
+db_url = _resolve_db_url()
+if db_url:
+    engine = get_engine(db_url)
+
     # Buat dua tab
     tab1, tab2 = st.tabs([
         "📊 Dashboard Interaktif",
@@ -104,7 +145,8 @@ try:
 
     # ================== KONTEN TAB 1: DASHBOARD INTERAKTIF ==================
     with tab1:
-        df = load_data_dashboard()
+        # Data dashboard tetap di-cache karena tidak sering berubah
+        df = load_data_dashboard(engine)
 
         st.markdown(
             "Gunakan **Filter Data** di bawah untuk menyaring tampilan. "
@@ -167,13 +209,12 @@ try:
     with tab2:
         st.subheader("📈 Rekapitulasi Jumlah Pasien Berdasarkan Rumah Sakit Penanganan")
         
-        # Karena cache sudah dihapus, fungsi ini akan selalu mengambil data terbaru dari DB
-        df_rekap_raw = load_data_rekap_rs()
+        # Memanggil fungsi yang tidak di-cache untuk mendapatkan data terbaru
+        df_rekap_raw = fetch_data_rekap_rs(engine)
 
         if df_rekap_raw.empty:
             st.warning("Tidak ada data penanganan pasien yang dapat ditampilkan.")
         else:
-            # Ganti nama kolom untuk tampilan yang lebih ramah pengguna
             df_rekap_view = df_rekap_raw.rename(columns={
                 "nama_rumah_sakit": "Nama Rumah Sakit",
                 "jumlah_pasien": "Jumlah Pasien",
@@ -196,7 +237,6 @@ try:
             st.markdown("---")
             st.subheader("Visualisasi Data")
 
-            # Ambil 20 RS teratas untuk visualisasi agar tidak terlalu ramai
             top_20_rs = df_rekap_raw.head(20)
             fig_rekap = plot_bar(
                 df=top_20_rs,
@@ -211,11 +251,3 @@ try:
             "Sumber data: **pwh.treatment_hospital** (kolom `name_hospital`). "
             "Nilai kosong/NULL dipetakan ke **'Data Tidak Disediakan'**."
         )
-
-
-except Exception as e:
-    st.error(f"Gagal terhubung ke database atau mengambil data: {e}")
-    st.info(
-        "Pastikan file `.streamlit/secrets.toml` sudah dikonfigurasi dengan benar "
-        "dan database PostgreSQL Anda sedang berjalan."
-    )
