@@ -106,7 +106,7 @@ def fetch_view_rs(engine: Engine) -> pd.DataFrame:
     1) Coba dari view pwh.v_hospital_summary
     2) Jika gagal, fallback ke query builder ekuivalen
     """
-    st.info("🔄 Mengambil data rekap (schema view) dari database...")
+    st.info("🔄 Mengambil data rekap dari database...")
     try:
         df = _select_from_view(engine)
         if not set(["Nama Rumah Sakit", "Jumlah Pasien", "Kota", "Propinsi"]).issubset(df.columns):
@@ -181,7 +181,7 @@ if db_url:
     # Buat dua tab
     tab1, tab2 = st.tabs([
         "📊 Dashboard Interaktif",
-        "📈 Rekapitulasi RS Penanganan Pasien (Schema View)"
+        "📈 Rekapitulasi RS Penanganan Pasien"
     ])
 
     # ================== TAB 1: DASHBOARD INTERAKTIF ==================
