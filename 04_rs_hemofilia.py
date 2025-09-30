@@ -247,7 +247,7 @@ if db_url:
 
     # ================== TAB 2: REKAPITULASI (SCHEMA VIEW) ==================
     with tab2:
-        st.subheader("📈 Rekapitulasi Jumlah Pasien per RS (Mengikuti Schema View)")
+        st.subheader("📈 Rekapitulasi Jumlah Pasien per RS")
 
         df_view = fetch_view_rs(engine)  # kolom: Nama Rumah Sakit, Jumlah Pasien, Kota, Propinsi
 
