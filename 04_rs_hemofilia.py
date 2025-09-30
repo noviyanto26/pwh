@@ -1,6 +1,8 @@
 # 04_rs_hemofilia.py
 import streamlit as st
 import pandas as pd
+import io
+import matplotlib.pyplot as plt
 
 # --- KONFIGURASI HALAMAN ---
 st.set_page_config(
@@ -15,9 +17,9 @@ st.set_page_config(
 conn = st.connection("postgresql", type="sql")
 
 @st.cache_data(ttl="10m")
-def load_data():
+def load_data_dashboard():
     """
-    Menjalankan query ke database dan mengembalikan hasilnya sebagai DataFrame.
+    Menjalankan query ke database untuk data dashboard utama.
     """
     query = "SELECT * FROM pwh.rumah_sakit_perawatan_hemofilia ORDER BY no;"
     df = conn.query(query)
@@ -28,7 +30,45 @@ def load_data():
             df[col] = df[col].astype("boolean")
     return df
 
-# --- ALIAS KOL0M UNTUK TAMPILAN ---
+@st.cache_data(ttl="10m")
+def load_data_rekap_rs():
+    """
+    Mengambil rekap jumlah pasien berdasarkan rumah sakit penanganan dari pwh.treatment_hospital.
+    """
+    query = """
+        SELECT
+            COALESCE(NULLIF(TRIM(name_hospital), ''), 'Data Tidak Disediakan') AS nama_rumah_sakit,
+            COUNT(*)::int AS jumlah_pasien
+        FROM pwh.treatment_hospital
+        GROUP BY 1
+        ORDER BY jumlah_pasien DESC, nama_rumah_sakit ASC;
+    """
+    df = conn.query(query)
+    total = int(df["jumlah_pasien"].sum()) if not df.empty else 0
+    df["persentase"] = (df["jumlah_pasien"] / total * 100).round(2) if total > 0 else 0.0
+    return df
+
+# --- FUNGSI UTILITAS (diambil dari contoh 05) ---
+
+def _to_excel_bytes(df: pd.DataFrame, sheet_name: str = "Data") -> bytes:
+    """Mengubah DataFrame ke file Excel (bytes)."""
+    output = io.BytesIO()
+    with pd.ExcelWriter(output, engine="openpyxl") as writer:
+        df.to_excel(writer, sheet_name=sheet_name, index=False)
+    return output.getvalue()
+
+def plot_bar(df: pd.DataFrame, label_col: str, value_col: str, title: str, xlabel_text: str) -> plt.Figure:
+    """Membuat grafik batang dari DataFrame."""
+    fig, ax = plt.subplots(figsize=(14, 8))
+    df_sorted = df.sort_values(by=value_col, ascending=True) # Ascending=True agar bar horizontal rapi
+    ax.barh(df_sorted[label_col].astype(str), df_sorted[value_col])
+    ax.set_title(title, fontsize=16)
+    ax.set_xlabel("Jumlah Pasien", fontsize=12)
+    ax.set_ylabel(xlabel_text, fontsize=12)
+    fig.tight_layout()
+    return fig
+
+# --- ALIAS KOLOM UNTUK TAMPILAN DASHBOARD ---
 COL_ALIAS = {
     "no": "No",
     "provinsi": "Propinsi",
@@ -53,79 +93,123 @@ def alias_for_display(df: pd.DataFrame) -> pd.DataFrame:
     return view.rename(columns={k: v for k, v in COL_ALIAS.items() if k in view.columns})
 
 # --- TAMPILAN APLIKASI ---
-st.title("🏥 Dashboard Data Rumah Sakit Perawatan Hemofilia")
-st.markdown(
-    "Gunakan **Filter Data** di bawah untuk menyaring tampilan. "
-    "Secara default, semua rumah sakit ditampilkan."
-)
+st.title("🏥 Dashboard Rumah Sakit Hemofilia")
 
 try:
-    df = load_data()
+    # Buat dua tab
+    tab1, tab2 = st.tabs([
+        "📊 Dashboard Interaktif",
+        "📈 Rekapitulasi RS Penanganan Pasien"
+    ])
 
-    # ================== FILTER DI HALAMAN UTAMA ==================
-    st.subheader("🔎 Filter Data")
+    # ================== KONTEN TAB 1: DASHBOARD INTERAKTIF ==================
+    with tab1:
+        df = load_data_dashboard()
 
-    c1, c2, c3 = st.columns([1.2, 1, 1])
+        st.markdown(
+            "Gunakan **Filter Data** di bawah untuk menyaring tampilan. "
+            "Secara default, semua rumah sakit ditampilkan."
+        )
+        st.subheader("🔎 Filter Data")
 
-    with c1:
-        # Pilih Propinsi: selectbox (single) dengan default "Semua Propinsi"
-        provinsi_list = sorted([p for p in df["provinsi"].dropna().unique()])
-        provinsi_options = ["Semua Propinsi"] + provinsi_list
-        provinsi_pilihan = st.selectbox("Pilih Propinsi", options=provinsi_options, index=0)
+        c1, c2, c3 = st.columns([1.2, 1, 1])
 
-    with c2:
-        dokter_option = st.selectbox(
-            "Ketersediaan Dokter Hematologi",
-            options=["Semua", "Ada", "Tidak Ada", "Data Kosong"],
-            index=0,
+        with c1:
+            provinsi_list = sorted([p for p in df["provinsi"].dropna().unique()])
+            provinsi_options = ["Semua Propinsi"] + provinsi_list
+            provinsi_pilihan = st.selectbox("Pilih Propinsi", options=provinsi_options, index=0)
+
+        with c2:
+            dokter_option = st.selectbox(
+                "Ketersediaan Dokter Hematologi",
+                options=["Semua", "Ada", "Tidak Ada", "Data Kosong"],
+                index=0,
+            )
+
+        with c3:
+            tim_option = st.selectbox(
+                "Ketersediaan Tim Terpadu Hemofilia",
+                options=["Semua", "Ada", "Tidak Ada", "Data Kosong"],
+                index=0,
+            )
+
+        # Proses Filter
+        df_filtered = df.copy()
+        if provinsi_pilihan != "Semua Propinsi":
+            df_filtered = df_filtered[df_filtered["provinsi"] == provinsi_pilihan]
+        if dokter_option == "Ada":
+            df_filtered = df_filtered[df_filtered["terdapat_dokter_hematologi"] == True]
+        elif dokter_option == "Tidak Ada":
+            df_filtered = df_filtered[df_filtered["terdapat_dokter_hematologi"] == False]
+        elif dokter_option == "Data Kosong":
+            df_filtered = df_filtered[df_filtered["terdapat_dokter_hematologi"].isna()]
+        if tim_option == "Ada":
+            df_filtered = df_filtered[df_filtered["terdapat_tim_terpadu_hemofilia"] == True]
+        elif tim_option == "Tidak Ada":
+            df_filtered = df_filtered[df_filtered["terdapat_tim_terpadu_hemofilia"] == False]
+        elif tim_option == "Data Kosong":
+            df_filtered = df_filtered[df_filtered["terdapat_tim_terpadu_hemofilia"].isna()]
+
+        # Tampilan Tabel & Statistik
+        st.header(f"Tabel Data Rumah Sakit ({len(df_filtered)} data ditemukan)")
+        st.dataframe(alias_for_display(df_filtered), use_container_width=True, hide_index=True)
+
+        st.header("Statistik Singkat (dari keseluruhan data)")
+        col1, col2, col3 = st.columns(3)
+        with col1:
+            st.metric("Total RS Tercatat", len(df))
+        with col2:
+            st.metric("RS Dengan Dokter Hematologi", int((df["terdapat_dokter_hematologi"] == True).sum()))
+        with col3:
+            st.metric("RS Dengan Tim Terpadu", int((df["terdapat_tim_terpadu_hemofilia"] == True).sum()))
+
+    # ================== KONTEN TAB 2: REKAPITULASI RS PENANGANAN ==================
+    with tab2:
+        st.subheader("📈 Rekapitulasi Jumlah Pasien Berdasarkan Rumah Sakit Penanganan")
+        df_rekap_raw = load_data_rekap_rs()
+
+        if df_rekap_raw.empty:
+            st.warning("Tidak ada data penanganan pasien yang dapat ditampilkan.")
+        else:
+            # Ganti nama kolom untuk tampilan yang lebih ramah pengguna
+            df_rekap_view = df_rekap_raw.rename(columns={
+                "nama_rumah_sakit": "Nama Rumah Sakit",
+                "jumlah_pasien": "Jumlah Pasien",
+                "persentase": "Persentase (%)"
+            })
+
+            st.dataframe(
+                df_rekap_view.style.format({"Persentase (%)": "{:.2f}"}),
+                use_container_width=True,
+                hide_index=True
+            )
+            
+            st.download_button(
+                "📥 Download Rekap RS Penanganan (Excel)",
+                data=_to_excel_bytes(df_rekap_view, sheet_name="Rekap_RS_Penanganan"),
+                file_name="rekap_rs_penanganan_pasien.xlsx",
+                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+            )
+            
+            st.markdown("---")
+            st.subheader("Visualisasi Data")
+
+            # Ambil 20 RS teratas untuk visualisasi agar tidak terlalu ramai
+            top_20_rs = df_rekap_raw.head(20)
+            fig_rekap = plot_bar(
+                df=top_20_rs,
+                label_col="nama_rumah_sakit",
+                value_col="jumlah_pasien",
+                title="Distribusi Pasien per Rumah Sakit (Top 20)",
+                xlabel_text="Nama Rumah Sakit"
+            )
+            st.pyplot(fig_rekap)
+
+        st.caption(
+            "Sumber data: **pwh.treatment_hospital** (kolom `name_hospital`). "
+            "Nilai kosong/NULL dipetakan ke **'Data Tidak Disediakan'**."
         )
 
-    with c3:
-        tim_option = st.selectbox(
-            "Ketersediaan Tim Terpadu Hemofilia",
-            options=["Semua", "Ada", "Tidak Ada", "Data Kosong"],
-            index=0,
-        )
-
-    # ================== PROSES FILTER ==================
-    df_filtered = df.copy()
-
-    # Filter Propinsi (hanya jika bukan "Semua Propinsi")
-    if provinsi_pilihan != "Semua Propinsi":
-        df_filtered = df_filtered[df_filtered["provinsi"] == provinsi_pilihan]
-
-    # Filter Dokter Hematologi
-    if dokter_option == "Ada":
-        df_filtered = df_filtered[df_filtered["terdapat_dokter_hematologi"] == True]
-    elif dokter_option == "Tidak Ada":
-        df_filtered = df_filtered[df_filtered["terdapat_dokter_hematologi"] == False]
-    elif dokter_option == "Data Kosong":
-        df_filtered = df_filtered[df_filtered["terdapat_dokter_hematologi"].isna()]
-
-    # Filter Tim Terpadu Hemofilia
-    if tim_option == "Ada":
-        df_filtered = df_filtered[df_filtered["terdapat_tim_terpadu_hemofilia"] == True]
-    elif tim_option == "Tidak Ada":
-        df_filtered = df_filtered[df_filtered["terdapat_tim_terpadu_hemofilia"] == False]
-    elif tim_option == "Data Kosong":
-        df_filtered = df_filtered[df_filtered["terdapat_tim_terpadu_hemofilia"].isna()]
-
-    # ================== TABEL & STATISTIK ==================
-    st.header(f"Tabel Data Rumah Sakit ({len(df_filtered)} data ditemukan)")
-    st.dataframe(
-        alias_for_display(df_filtered),
-        use_container_width=True,
-        hide_index=True
-    )
-
-    st.header("Statistik Singkat")
-    col1, col2, col3 = st.columns(3)
-    with col1:
-        st.metric("Total RS Tercatat", len(df))
-    with col2:
-        st.metric("RS Dengan Dokter Hematologi", int((df["terdapat_dokter_hematologi"] == True).sum()))
-    with col3:
-        st.metric("RS Dengan Tim Terpadu", int((df["terdapat_tim_terpadu_hemofilia"] == True).sum()))
 
 except Exception as e:
     st.error(f"Gagal terhubung ke database atau mengambil data: {e}")
