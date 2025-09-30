@@ -44,8 +44,6 @@ def get_engine(dsn: str) -> Engine:
 
 # --- FUNGSI PENGAMBILAN DATA ---
 
-# --- PERUBAHAN DI SINI ---
-# Nama argumen 'engine' diubah menjadi '_engine' untuk mengatasi error UnhashableParamError.
 @st.cache_data(ttl="10m")
 def load_data_dashboard(_engine: Engine) -> pd.DataFrame:
     """
@@ -53,7 +51,6 @@ def load_data_dashboard(_engine: Engine) -> pd.DataFrame:
     Data ini di-cache karena tidak sering berubah.
     """
     query = text("SELECT * FROM pwh.rumah_sakit_perawatan_hemofilia ORDER BY no;")
-    # Gunakan '_engine' di dalam fungsi
     with _engine.connect() as conn:
         df = pd.read_sql(query, conn)
 
@@ -62,31 +59,34 @@ def load_data_dashboard(_engine: Engine) -> pd.DataFrame:
         if col in df.columns:
             df[col] = df[col].astype("boolean")
     return df
-# --- AKHIR PERUBAHAN ---
 
+# --- PERUBAHAN DI SINI ---
 def fetch_data_rekap_rs(engine: Engine) -> pd.DataFrame:
     """
-    Mengambil rekap jumlah pasien dari pwh.treatment_hospital.
+    Mengambil rekap jumlah pasien dari view pwh.v_hospital_summary.
     Fungsi ini TIDAK DI-CACHE untuk memastikan data selalu terbaru.
     """
     st.info("🔄 Mengambil data rekapitulasi terbaru dari database...")
+    # Query diubah untuk mengambil data dari view pwh.v_hospital_summary
+    # Asumsi view ini memiliki kolom 'nama_rumah_sakit' dan 'jumlah_pasien'
     query = text("""
         SELECT
-            COALESCE(NULLIF(TRIM(name_hospital), ''), 'Data Tidak Disediakan') AS nama_rumah_sakit,
-            COUNT(*)::int AS jumlah_pasien
-        FROM pwh.treatment_hospital
-        GROUP BY 1
+            nama_rumah_sakit,
+            jumlah_pasien
+        FROM pwh.v_hospital_summary
         ORDER BY jumlah_pasien DESC, nama_rumah_sakit ASC;
     """)
     try:
         with engine.connect() as conn:
             df = pd.read_sql(query, conn)
+        # Kalkulasi persentase dipindahkan ke sini karena view mungkin tidak menyediakannya
         total = int(df["jumlah_pasien"].sum()) if not df.empty else 0
         df["persentase"] = (df["jumlah_pasien"] / total * 100).round(2) if total > 0 else 0.0
         return df
     except Exception as e:
-        st.error(f"Gagal mengambil data rekapitulasi: {e}")
+        st.error(f"Gagal mengambil data rekapitulasi dari 'pwh.v_hospital_summary': {e}")
         return pd.DataFrame()
+# --- AKHIR PERUBAHAN ---
 
 
 # --- FUNGSI UTILITAS ---
@@ -249,8 +249,9 @@ if db_url:
                 xlabel_text="Nama Rumah Sakit"
             )
             st.pyplot(fig_rekap)
-
+        
+        # --- PERUBAHAN DI SINI ---
         st.caption(
-            "Sumber data: **pwh.treatment_hospital** (kolom `name_hospital`). "
-            "Nilai kosong/NULL dipetakan ke **'Data Tidak Disediakan'**."
+            "Sumber data: **pwh.v_hospital_summary**."
         )
+        # --- AKHIR PERUBAHAN ---
