@@ -57,21 +57,21 @@ def load_data_dashboard(_engine: Engine) -> pd.DataFrame:
             df[col] = df[col].astype("boolean")
     return df
 
-# --- PERUBAHAN UTAMA DI SINI ---
+# --- PERUBAHAN FINAL DI SINI ---
 def fetch_data_rekap_rs(engine: Engine) -> pd.DataFrame:
     """
     Mengambil rekap jumlah pasien dari view pwh.v_hospital_summary.
     """
     st.info("🔄 Mengambil data rekapitulasi terbaru dari database...")
     
-    # Query disesuaikan dengan nama kolom dari skema view yang diberikan:
-    # 'hospital_name' dan 'patient_count'.
+    # Query disesuaikan dengan skema yang benar, menggunakan tanda kutip ganda
+    # untuk nama kolom yang mengandung spasi.
     query = text("""
         SELECT
-            hospital_name AS nama_rumah_sakit,
-            patient_count AS jumlah_pasien
+            "Nama Rumah Sakit" AS nama_rumah_sakit,
+            "Jumlah Pasien" AS jumlah_pasien
         FROM pwh.v_hospital_summary
-        ORDER BY jumlah_pasien DESC, nama_rumah_sakit ASC;
+        ORDER BY "Jumlah Pasien" DESC, "Nama Rumah Sakit" ASC;
     """)
     try:
         with engine.connect() as conn:
@@ -81,7 +81,7 @@ def fetch_data_rekap_rs(engine: Engine) -> pd.DataFrame:
         return df
     except Exception as e:
         st.error(f"Gagal mengambil data rekapitulasi dari 'pwh.v_hospital_summary': {e}")
-        st.warning("Pastikan nama kolom di dalam view database Anda adalah 'hospital_name' dan 'patient_count'.")
+        st.warning("Pastikan view 'pwh.v_hospital_summary' ada dan dapat diakses.")
         return pd.DataFrame()
 # --- AKHIR PERUBAHAN ---
 
