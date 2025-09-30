@@ -135,7 +135,8 @@ with col_occ:
         df_occ_view = _localized(df_occ_raw, domain="occupation")
         st.dataframe(
             df_occ_view.style.format({"Persentase": "{:.2f}%"}),
-            use_container_width=True
+            use_container_width=True,
+            hide_index=True  # <-- PERUBAHAN DI SINI
         )
         st.download_button(
             "📥 Download Rekap Pekerjaan (Excel)",
@@ -157,7 +158,8 @@ with col_edu:
         df_edu_view = _localized(df_edu_raw, domain="education")
         st.dataframe(
             df_edu_view.style.format({"Persentase": "{:.2f}%"}),
-            use_container_width=True
+            use_container_width=True,
+            hide_index=True  # <-- PERUBAHAN DI SINI
         )
         st.download_button(
             "📥 Download Rekap Pendidikan (Excel)",
