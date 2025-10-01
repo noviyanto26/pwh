@@ -717,7 +717,28 @@ with tab_pat:
             clear_session_state('patient_matches')
             st.rerun()
 
-    dfp = run_df("SELECT id, full_name, birth_place, birth_date, blood_group, rhesus, gender, occupation, education, address, phone, province, city, created_at FROM pwh.patients ORDER BY id DESC LIMIT 200;")
+    dfp = run_df("""
+    SELECT 
+        p.id,
+        p.full_name,
+        p.birth_place,
+        p.birth_date,
+        pa.age_years,           
+        p.blood_group,
+        p.rhesus,
+        p.gender,
+        p.occupation,
+        p.education,
+        p.address,
+        p.phone,
+        p.province,
+        p.city,
+        p.created_at
+    FROM pwh.patients p
+    LEFT JOIN pwh.patient_age pa ON pa.patient_id = p.id
+    ORDER BY p.id DESC
+    LIMIT 200;
+""")
     
     if not dfp.empty:
         dfp_display = dfp.copy()
