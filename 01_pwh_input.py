@@ -345,7 +345,7 @@ def _severity_default_index(choices: list[str]) -> int:
 # ------------------------------------------------------------------------------
 # Alias kolom (header) untuk tampilan
 # ------------------------------------------------------------------------------
-ALIAS_PATIENTS = {"full_name": "Nama Lengkap","birth_place": "Tempat Lahir","birth_date": "Tanggal Lahir","blood_group": "Gol. Darah","rhesus": "Rhesus", "gender": "Jenis Kelamin", "occupation": "Pekerjaan", "education": "Pendidikan Terakhir", "address": "Alamat","phone": "No. Ponsel","province": "Propinsi","city": "Kabupaten/Kota","created_at": "Dibuat"}
+ALIAS_PATIENTS = {"full_name": "Nama Lengkap","birth_place": "Tempat Lahir","birth_date": "Tanggal Lahir","age_years": "Umur (tahun)","blood_group": "Gol. Darah","rhesus": "Rhesus","gender": "Jenis Kelamin","occupation": "Pekerjaan","education": "Pendidikan Terakhir","address": "Alamat","phone": "No. Ponsel","province": "Propinsi","city": "Kabupaten/Kota","created_at": "Dibuat"}
 ALIAS_DIAG = {"full_name": "Nama Lengkap","hemo_type": "Jenis Hemofilia","severity": "Kategori","diagnosed_on": "Tgl Diagnosis","source": "Sumber"}
 ALIAS_INH = {"full_name": "Nama Lengkap","factor": "Faktor","titer_bu": "Titer (BU)","measured_on": "Tgl Ukur","lab": "Lab"}
 ALIAS_VIRUS = {"full_name": "Nama Lengkap","test_type": "Jenis Tes","result": "Hasil","tested_on": "Tgl Tes","lab": "Lab"}
