@@ -16,8 +16,26 @@ st.set_page_config(page_title="PWH Input", page_icon="🩸", layout="wide")
 def build_excel_bytes() -> bytes:
     # Ambil semua dataset
     df_patients = run_df("""
-        SELECT id, full_name, birth_place, birth_date, blood_group, rhesus, gender, occupation, education, address, phone, province, city, created_at
-        FROM pwh.patients ORDER BY id
+        SELECT
+    p.id,
+    p.full_name,
+    p.birth_place,
+    p.birth_date,
+    COALESCE(pa.age_years, EXTRACT(YEAR FROM age(CURRENT_DATE, p.birth_date))) AS age_years,
+    p.blood_group,
+    p.rhesus,
+    p.gender,
+    p.occupation,
+    p.education,
+    p.address,
+    p.phone,
+    p.province,
+    p.city,
+    p.created_at
+FROM pwh.patients p
+LEFT JOIN pwh.patient_age pa ON pa.id = p.id
+ORDER BY p.id
+
     """)
     df_diag = run_df("""
         SELECT d.id, d.patient_id, p.full_name, d.hemo_type, d.severity, d.diagnosed_on, d.source
@@ -345,7 +363,7 @@ def _severity_default_index(choices: list[str]) -> int:
 # ------------------------------------------------------------------------------
 # Alias kolom (header) untuk tampilan
 # ------------------------------------------------------------------------------
-ALIAS_PATIENTS = {"full_name": "Nama Lengkap","birth_place": "Tempat Lahir","birth_date": "Tanggal Lahir","blood_group": "Gol. Darah","rhesus": "Rhesus", "gender": "Jenis Kelamin", "occupation": "Pekerjaan", "education": "Pendidikan Terakhir", "address": "Alamat","phone": "No. Ponsel","province": "Propinsi","city": "Kabupaten/Kota","created_at": "Dibuat"}
+ALIAS_PATIENTS = {"full_name": "Nama Lengkap","birth_place": "Tempat Lahir","birth_date": "Tanggal Lahir", "age_years": "Umur (tahun)", "blood_group": "Gol. Darah","rhesus": "Rhesus", "gender": "Jenis Kelamin", "occupation": "Pekerjaan", "education": "Pendidikan Terakhir", "address": "Alamat","phone": "No. Ponsel","province": "Propinsi","city": "Kabupaten/Kota","created_at": "Dibuat"}
 ALIAS_DIAG = {"full_name": "Nama Lengkap","hemo_type": "Jenis Hemofilia","severity": "Kategori","diagnosed_on": "Tgl Diagnosis","source": "Sumber"}
 ALIAS_INH = {"full_name": "Nama Lengkap","factor": "Faktor","titer_bu": "Titer (BU)","measured_on": "Tgl Ukur","lab": "Lab"}
 ALIAS_VIRUS = {"full_name": "Nama Lengkap","test_type": "Jenis Tes","result": "Hasil","tested_on": "Tgl Tes","lab": "Lab"}
@@ -717,7 +735,29 @@ with tab_pat:
             clear_session_state('patient_matches')
             st.rerun()
 
-    dfp = run_df("SELECT id, full_name, birth_place, birth_date, blood_group, rhesus, gender, occupation, education, address, phone, province, city, created_at FROM pwh.patients ORDER BY id DESC LIMIT 200;")
+    dfp = run_df("""
+SELECT
+    p.id,
+    p.full_name,
+    p.birth_place,
+    p.birth_date,
+    COALESCE(pa.age_years, EXTRACT(YEAR FROM age(CURRENT_DATE, p.birth_date))) AS age_years,
+    p.blood_group,
+    p.rhesus,
+    p.gender,
+    p.occupation,
+    p.education,
+    p.address,
+    p.phone,
+    p.province,
+    p.city,
+    p.created_at
+FROM pwh.patients p
+LEFT JOIN pwh.patient_age pa ON pa.id = p.id
+ORDER BY p.id DESC
+LIMIT 200;
+
+""")
     
     if not dfp.empty:
         dfp_display = dfp.copy()
