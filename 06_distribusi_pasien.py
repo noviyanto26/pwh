@@ -149,17 +149,20 @@ min_count = st.sidebar.number_input("Filter minimum jumlah pasien per kota", min
 # =========================
 # UTIL GEOCODING
 # =========================
+# definisi
 @st.cache_data(show_spinner=False)
-def load_kota_geo_from_db(run: Callable[[str], pd.DataFrame]) -> pd.DataFrame:
-    """Mencoba memuat tabel referensi lokal public.kota_geo(kota, propinsi, lat, lon)."""
+def load_kota_geo_from_db(_run: Callable[[str], pd.DataFrame]) -> pd.DataFrame:
     try:
         q = "SELECT kota, propinsi, lat, lon FROM public.kota_geo;"
-        df_geo = run(q)
+        df_geo = _run(q)
         for c in ["kota", "propinsi"]:
             df_geo[c] = df_geo[c].astype(str).str.strip()
         return df_geo
     except Exception:
         return pd.DataFrame(columns=["kota", "propinsi", "lat", "lon"])
+
+# pemanggilan
+geo_ref = load_kota_geo_from_db(run_query)
 
 @st.cache_data(show_spinner=False)
 def nominatim_geocode(city: str, province: str) -> Optional[tuple]:
