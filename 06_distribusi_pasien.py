@@ -1,10 +1,11 @@
-import streamlit as st
+# 06_distribusi_pasien.py — Peta Jumlah Pasien per Kota (Hemofilia)
+import os
 import pandas as pd
-import numpy as np
-import json
-import time
+import streamlit as st
 import pydeck as pdk
 import requests
+from typing import Callable, Optional
+from sqlalchemy import create_engine, text
 
 # =========================
 # KONFIGURASI HALAMAN
@@ -17,13 +18,48 @@ st.set_page_config(
 st.title("🗺️ Peta Jumlah Pasien per Kota (Hemofilia)")
 
 # =========================
-# KONEKSI DATABASE
+# UTIL KONEKSI (dual-mode)
 # =========================
-# Mengikuti pola di 04_rs_hemofilia.py (st.connection)
-conn = st.connection("postgresql", type="sql")
+def _build_query_runner() -> Callable[[str], pd.DataFrame]:
+    """
+    Mengembalikan fungsi run_query(sql) -> DataFrame.
+    Prioritas:
+      1) st.connection("postgresql", type="sql")
+      2) SQLAlchemy via st.secrets["DATABASE_URL"] / env DATABASE_URL
+    """
+    # 1) Streamlit connection
+    try:
+        conn = st.connection("postgresql", type="sql")
+        def _run_query_streamlit(sql: str) -> pd.DataFrame:
+            return conn.query(sql)
+        # uji ringan
+        _ = _run_query_streamlit("SELECT 1 as ok;")
+        return _run_query_streamlit
+    except Exception:
+        pass
 
+    # 2) SQLAlchemy (DATABASE_URL)
+    db_url = st.secrets.get("DATABASE_URL", os.getenv("DATABASE_URL", ""))
+    if not db_url:
+        st.error("❌ Koneksi DB tidak dikonfigurasi. Set 'connections.postgresql' di secrets.toml "
+                 "atau 'DATABASE_URL' di secrets.")
+        st.stop()
+    engine = create_engine(db_url, pool_pre_ping=True)
+
+    def _run_query_engine(sql: str) -> pd.DataFrame:
+        with engine.connect() as con:
+            return pd.read_sql(text(sql), con)
+    # uji ringan
+    _ = _run_query_engine("SELECT 1 as ok;")
+    return _run_query_engine
+
+run_query = _build_query_runner()
+
+# =========================
+# DATA REKAP
+# =========================
 @st.cache_data(ttl="10m", show_spinner="Mengambil rekap RS dari view...")
-def load_rekap():
+def load_rekap() -> pd.DataFrame:
     """
     Mengambil data dari view pwh.v_hospital_summary dengan kolom:
     'Nama Rumah Sakit', 'Jumlah Pasien', 'Kota', 'Propinsi'
@@ -37,8 +73,7 @@ def load_rekap():
         FROM pwh.v_hospital_summary
         ORDER BY "Jumlah Pasien" DESC, "Nama Rumah Sakit" ASC;
     """
-    df = conn.query(sql)
-    # Normalisasi teks untuk konsistensi join/lookup
+    df = run_query(sql)
     for c in ["Kota", "Propinsi"]:
         if c in df.columns:
             df[c] = df[c].astype(str).str.strip()
@@ -47,9 +82,7 @@ def load_rekap():
 # =========================
 # SUMBER KOORDINAT LOKAL (Fallback statis)
 # =========================
-# Beberapa ibukota provinsi + kota besar. Silakan tambah sesuai kebutuhan.
 STATIC_CITY_COORDS = {
-    # format: ("kota_lower", "propinsi_lower"): (lat, lon)
     ("jakarta", "dki jakarta"): (-6.1754, 106.8272),
     ("jakarta pusat", "dki jakarta"): (-6.1857, 106.8410),
     ("jakarta timur", "dki jakarta"): (-6.2251, 106.9004),
@@ -117,11 +150,11 @@ min_count = st.sidebar.number_input("Filter minimum jumlah pasien per kota", min
 # UTIL GEOCODING
 # =========================
 @st.cache_data(show_spinner=False)
-def load_kota_geo_from_db() -> pd.DataFrame:
+def load_kota_geo_from_db(run: Callable[[str], pd.DataFrame]) -> pd.DataFrame:
     """Mencoba memuat tabel referensi lokal public.kota_geo(kota, propinsi, lat, lon)."""
     try:
         q = "SELECT kota, propinsi, lat, lon FROM public.kota_geo;"
-        df_geo = conn.query(q)
+        df_geo = run(q)
         for c in ["kota", "propinsi"]:
             df_geo[c] = df_geo[c].astype(str).str.strip()
         return df_geo
@@ -129,31 +162,22 @@ def load_kota_geo_from_db() -> pd.DataFrame:
         return pd.DataFrame(columns=["kota", "propinsi", "lat", "lon"])
 
 @st.cache_data(show_spinner=False)
-def nominatim_geocode(city: str, province: str):
-    """
-    Geocoding via OpenStreetMap Nominatim (opsional).
-    Dibungkus cache agar tidak berulang-ulang.
-    """
+def nominatim_geocode(city: str, province: str) -> Optional[tuple]:
+    """Geocoding via OpenStreetMap Nominatim (opsional)."""
     base = "https://nominatim.openstreetmap.org/search"
-    params = {
-        "q": f"{city}, {province}, Indonesia",
-        "format": "json",
-        "limit": 1,
-    }
+    params = {"q": f"{city}, {province}, Indonesia", "format": "json", "limit": 1}
     headers = {"User-Agent": "hemofilia-geo/1.0 (contact: youremail@example.com)"}
     try:
         r = requests.get(base, params=params, headers=headers, timeout=10)
         r.raise_for_status()
         j = r.json()
         if isinstance(j, list) and j:
-            lat = float(j[0]["lat"])
-            lon = float(j[0]["lon"])
-            return lat, lon
+            return float(j[0]["lat"]), float(j[0]["lon"])
     except Exception:
         pass
     return None
 
-def lookup_coord(city: str, province: str, df_ref: pd.DataFrame):
+def lookup_coord(city: str, province: str, df_ref: pd.DataFrame) -> Optional[tuple]:
     """Urutan lookup: tabel local -> kamus statis -> (opsional) OSM geocode."""
     c = (city or "").strip().lower()
     p = (province or "").strip().lower()
@@ -173,16 +197,18 @@ def lookup_coord(city: str, province: str, df_ref: pd.DataFrame):
     if use_online_geocoding:
         res = nominatim_geocode(city, province)
         if res:
-            # (Opsional) Anda bisa menambah hasil ke cache lokal (tabel temp) bila mau
             return res
 
     return None
+
+def _is_valid_coord(v) -> bool:
+    """Valid jika tuple/list 2 elemen dan keduanya non-null."""
+    return isinstance(v, (list, tuple)) and len(v) == 2 and all(pd.notna(v))
 
 # =========================
 # PROSES DATA & PETA
 # =========================
 df = load_rekap()
-
 if df.empty:
     st.warning("Data rekap tidak ditemukan. Pastikan view pwh.v_hospital_summary tersedia.")
     st.stop()
@@ -193,45 +219,52 @@ grouped = (
       .sum()
       .reset_index()
 )
+
 # Filter minimum count
 if min_count > 0:
     grouped = grouped[grouped["Jumlah Pasien"] >= min_count].copy()
 
-# Lookup koordinat
-geo_ref = load_kota_geo_from_db()
-coords = grouped.apply(
+# Lookup koordinat & validasi
+geo_ref = load_kota_geo_from_db(run_query)
+grouped["coord"] = grouped.apply(
     lambda r: lookup_coord(r["Kota"], r["Propinsi"], geo_ref), axis=1
 )
 
-grouped["coord"] = coords
-grouped = grouped[grouped["coord"].notna()].copy()
-grouped[["lat", "lon"]] = pd.DataFrame(grouped["coord"].tolist(), index=grouped.index)
+valid_mask = grouped["coord"].apply(_is_valid_coord)
+grouped_valid = grouped[valid_mask].copy()
+
+# expand ke lat/lon (aman karena sudah tervalidasi)
+latlon = grouped_valid["coord"].apply(pd.Series)
+latlon.columns = ["lat", "lon"]
+grouped_valid = pd.concat([grouped_valid.drop(columns=["coord"]), latlon], axis=1)
+
+# pastikan float & drop NaN
+grouped_valid["lat"] = pd.to_numeric(grouped_valid["lat"], errors="coerce")
+grouped_valid["lon"] = pd.to_numeric(grouped_valid["lon"], errors="coerce")
+grouped_valid = grouped_valid.dropna(subset=["lat", "lon"])
 
 # Tampilkan tabel ringkas
-st.subheader(f"📋 Rekap Per Kota (ditemukan koordinat: {len(grouped)}/{len(coords)})")
+st.subheader(f"📋 Rekap Per Kota (koordinat valid: {len(grouped_valid)}/{len(grouped)})")
 st.dataframe(
-    grouped[["Kota", "Propinsi", "Jumlah Pasien", "lat", "lon"]]
+    grouped_valid[["Kota", "Propinsi", "Jumlah Pasien", "lat", "lon"]]
         .sort_values("Jumlah Pasien", ascending=False),
     use_container_width=True, hide_index=True
 )
 
 # Map center kasar Indonesia
-default_view_state = pdk.ViewState(
-    latitude=-2.5, longitude=118.0, zoom=4.2, pitch=0
-)
+default_view_state = pdk.ViewState(latitude=-2.5, longitude=118.0, zoom=4.2, pitch=0)
 
 # Layers
 heatmap_layer = pdk.Layer(
     "HeatmapLayer",
-    data=grouped,
+    data=grouped_valid,
     get_position='[lon, lat]',
     get_weight="Jumlah Pasien",
     radius_pixels=int(heatmap_radius),
 )
-
 scatter_layer = pdk.Layer(
     "ScatterplotLayer",
-    data=grouped,
+    data=grouped_valid,
     get_position='[lon, lat]',
     get_radius="(Math.sqrt(Jumlah Pasien) * 2000)",  # radius proporsional
     pickable=True,
@@ -246,7 +279,7 @@ tooltip = {
 st.subheader("🗺️ Peta Persebaran")
 st.pydeck_chart(
     pdk.Deck(
-        map_style="mapbox://styles/mapbox/light-v9",  # gunakan style default; Mapbox token opsional
+        map_style="mapbox://styles/mapbox/light-v9",
         initial_view_state=default_view_state,
         layers=[heatmap_layer, scatter_layer],
         tooltip=tooltip,
@@ -256,7 +289,7 @@ st.pydeck_chart(
 # Unduhan data hasil agregasi + koordinat
 st.download_button(
     "📥 Download Data Per Kota (CSV)",
-    data=grouped[["Kota", "Propinsi", "Jumlah Pasien", "lat", "lon"]].to_csv(index=False).encode("utf-8"),
+    data=grouped_valid[["Kota", "Propinsi", "Jumlah Pasien", "lat", "lon"]].to_csv(index=False).encode("utf-8"),
     file_name="rekap_pasien_per_kota.csv",
     mime="text/csv",
 )
