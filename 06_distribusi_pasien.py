@@ -139,7 +139,13 @@ def lookup_coord(city: str, province: str, df_ref: pd.DataFrame) -> Optional[tup
     return None
 
 def _is_valid_coord(v) -> bool:
-    return isinstance(v, (list, tuple)) and len(v) == 2 and all(pd.notna(v))
+    return (
+        isinstance(v, (list, tuple))
+        and len(v) == 2
+        and pd.notna(v[0])
+        and pd.notna(v[1])
+    )
+
 
 # =========================
 # PROSES DATA & PETA
