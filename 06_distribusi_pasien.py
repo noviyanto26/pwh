@@ -41,8 +41,7 @@ def _build_query_runner() -> Callable[[str], pd.DataFrame]:
     # 2) SQLAlchemy (DATABASE_URL)
     db_url = st.secrets.get("DATABASE_URL", os.getenv("DATABASE_URL", ""))
     if not db_url:
-        st.error("❌ Koneksi DB tidak dikonfigurasi. Set 'connections.postgresql' di secrets.toml "
-                 "atau 'DATABASE_URL' di secrets.")
+        st.error("❌ Koneksi DB tidak dikonfigurasi. Set 'connections.postgresql' di secrets.toml atau 'DATABASE_URL' di secrets.")
         st.stop()
     engine = create_engine(db_url, pool_pre_ping=True)
 
@@ -149,20 +148,17 @@ min_count = st.sidebar.number_input("Filter minimum jumlah pasien per kota", min
 # =========================
 # UTIL GEOCODING
 # =========================
-# definisi
 @st.cache_data(show_spinner=False)
-def load_kota_geo_from_db(_run: Callable[[str], pd.DataFrame]) -> pd.DataFrame:
+def load_kota_geo_from_db() -> pd.DataFrame:
+    """Mencoba memuat tabel referensi lokal public.kota_geo(kota, propinsi, lat, lon)."""
     try:
         q = "SELECT kota, propinsi, lat, lon FROM public.kota_geo;"
-        df_geo = _run(q)
+        df_geo = run_query(q)
         for c in ["kota", "propinsi"]:
             df_geo[c] = df_geo[c].astype(str).str.strip()
         return df_geo
     except Exception:
         return pd.DataFrame(columns=["kota", "propinsi", "lat", "lon"])
-
-# pemanggilan
-geo_ref = load_kota_geo_from_db(run_query)
 
 @st.cache_data(show_spinner=False)
 def nominatim_geocode(city: str, province: str) -> Optional[tuple]:
@@ -204,9 +200,11 @@ def lookup_coord(city: str, province: str, df_ref: pd.DataFrame) -> Optional[tup
 
     return None
 
+# helper validasi koordinat
+_def_notna = lambda x: (x is not None) and (not pd.isna(x))
+
 def _is_valid_coord(v) -> bool:
-    """Valid jika tuple/list 2 elemen dan keduanya non-null."""
-    return isinstance(v, (list, tuple)) and len(v) == 2 and all(pd.notna(v))
+    return isinstance(v, (list, tuple)) and len(v) == 2 and _def_notna(v[0]) and _def_notna(v[1])
 
 # =========================
 # PROSES DATA & PETA
@@ -228,20 +226,36 @@ if min_count > 0:
     grouped = grouped[grouped["Jumlah Pasien"] >= min_count].copy()
 
 # Lookup koordinat & validasi
-geo_ref = load_kota_geo_from_db(run_query)
+geo_ref = load_kota_geo_from_db()
 grouped["coord"] = grouped.apply(
     lambda r: lookup_coord(r["Kota"], r["Propinsi"], geo_ref), axis=1
 )
 
 valid_mask = grouped["coord"].apply(_is_valid_coord)
-grouped_valid = grouped[valid_mask].copy()
 
-# expand ke lat/lon (aman karena sudah tervalidasi)
-latlon = grouped_valid["coord"].apply(pd.Series)
-latlon.columns = ["lat", "lon"]
+# Jika tidak ada satupun koordinat valid → tampilkan tabel & instruksi, lalu hentikan
+if not valid_mask.any():
+    st.warning(
+        "Belum ada koordinat kota yang valid.\n\n"
+        "Solusi cepat:\n"
+        "1) Isi referensi `public.kota_geo(kota, propinsi, lat, lon)`, atau\n"
+        "2) Aktifkan geocoding online (sidebar), lalu muat ulang halaman."
+    )
+    st.dataframe(
+        grouped[["Kota", "Propinsi", "Jumlah Pasien"]]
+            .sort_values("Jumlah Pasien", ascending=False),
+        use_container_width=True, hide_index=True
+    )
+    st.stop()
+
+# Hanya baris yang punya koordinat valid
+grouped_valid = grouped.loc[valid_mask].copy()
+
+# Ekspansi coord -> lat/lon dengan penamaan eksplisit
+latlon = grouped_valid["coord"].apply(lambda v: pd.Series({"lat": v[0], "lon": v[1]}))
 grouped_valid = pd.concat([grouped_valid.drop(columns=["coord"]), latlon], axis=1)
 
-# pastikan float & drop NaN
+# Pastikan tipe float & buang NaN
 grouped_valid["lat"] = pd.to_numeric(grouped_valid["lat"], errors="coerce")
 grouped_valid["lon"] = pd.to_numeric(grouped_valid["lon"], errors="coerce")
 grouped_valid = grouped_valid.dropna(subset=["lat", "lon"])
@@ -298,6 +312,6 @@ st.download_button(
 )
 
 st.caption(
-    "Sumber: view **pwh.v_hospital_summary**. Koordinat diambil dari tabel lokal `public.kota_geo` "
-    "(jika ada), fallback kamus statis, dan *opsional* geocoding online Nominatim/OSM."
+    "Sumber: view **pwh.v_hospital_summary**. Koordinat diambil dari tabel lokal `public.kota_geo` (jika ada), "
+    "fallback kamus statis, dan *opsional* geocoding online Nominatim/OSM."
 )
