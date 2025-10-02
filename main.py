@@ -62,9 +62,13 @@ MENU_ITEMS = {
     "📝 Input Data Pasien": "01_pwh_input.py",
     "📊 Rekapitulasi per Kelompok Usia": "02_rekap_pwh.py",
     "🚻 Rekapitulasi per Jenis Kelamin": "03_rekap_gender.py",
-    "🏥 RS Perawatan Hemofilia": "04_rs_hemofilia.py",               # ✅
-    "📚 Rekap Pendidikan & Pekerjaan": "05_rekap_pend_pekerjaan.py", # ✅
-    "🗺️ Distribusi Pasien per Kota": "06_distribusi_pasien.py",      # ✅ BARU
+    "🏥 RS Perawatan Hemofilia": "04_rs_hemofilia.py",
+    "📚 Rekap Pendidikan & Pekerjaan": "05_rekap_pend_pekerjaan.py",
+    "🗺️ Distribusi Pasien per Kota": "06_distribusi_pasien.py",
+    # >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>
+    # Tambahan baru: Rekap per Provinsi (mengarah ke file 07_rekap_propinsi.py)
+    "🗺️ Rekapitulasi per Provinsi": "07_rekap_propinsi.py",
+    # <<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<
 }
 
 ICONS = [
@@ -73,7 +77,8 @@ ICONS = [
     "person-arms-up",  # 🚻
     "hospital",        # 🏥
     "book",            # 📚
-    "map"              # 🗺️ BARU
+    "map",             # 🗺️ Kota
+    "geo-alt",         # 🗺️ Provinsi (ikon baru untuk item yang ditambahkan)
 ]
 
 # -----------------------------
