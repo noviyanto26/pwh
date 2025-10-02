@@ -146,7 +146,6 @@ def _is_valid_coord(v) -> bool:
         and pd.notna(v[1])
     )
 
-
 # =========================
 # PROSES DATA & PETA
 # =========================
@@ -169,18 +168,26 @@ latlon.columns = ["lat", "lon"]
 grouped_valid = pd.concat([grouped_valid.drop(columns=["coord"]), latlon], axis=1)
 grouped_valid = grouped_valid.dropna(subset=["lat", "lon"])
 
+# hitung radius di python agar tidak error di pydeck JSON
+if not grouped_valid.empty:
+    grouped_valid["radius"] = (grouped_valid["Jumlah Pasien"] ** 0.5) * 2000
+
 st.subheader(f"📋 Rekap Per Kota (koordinat valid: {len(grouped_valid)}/{len(grouped)})")
 st.dataframe(grouped_valid[["Kota", "Propinsi", "Jumlah Pasien", "lat", "lon"]].sort_values("Jumlah Pasien", ascending=False), use_container_width=True, hide_index=True)
 
 def_view = pdk.ViewState(latitude=-2.5, longitude=118.0, zoom=4.2, pitch=0)
 heatmap_layer = pdk.Layer("HeatmapLayer", data=grouped_valid, get_position='[lon, lat]', get_weight="Jumlah Pasien", radius_pixels=int(heatmap_radius))
-scatter_layer = pdk.Layer("ScatterplotLayer", data=grouped_valid, get_position='[lon, lat]', get_radius="(Math.sqrt(Jumlah Pasien) * 2000)", pickable=True, auto_highlight=True)
+scatter_layer = pdk.Layer("ScatterplotLayer", data=grouped_valid, get_position='[lon, lat]', get_radius='radius', pickable=True, auto_highlight=True)
 
 tooltip = {"html": "<b>{Kota}, {Propinsi}</b><br/>Jumlah Pasien: {Jumlah Pasien}", "style": {"backgroundColor": "white", "color": "black"}}
 
 st.subheader("🗺️ Peta Persebaran")
-st.pydeck_chart(pdk.Deck(map_style="mapbox://styles/mapbox/light-v9", initial_view_state=def_view, layers=[heatmap_layer, scatter_layer], tooltip=tooltip))
+if grouped_valid.empty:
+    st.info("Belum ada koordinat kota yang valid. Pastikan tabel public.kota_geo terisi atau aktifkan geocoding online.")
+else:
+    st.pydeck_chart(pdk.Deck(map_style="mapbox://styles/mapbox/light-v9", initial_view_state=def_view, layers=[heatmap_layer, scatter_layer], tooltip=tooltip))
 
-st.download_button("📥 Download Data Per Kota (CSV)", data=grouped_valid[["Kota", "Propinsi", "Jumlah Pasien", "lat", "lon"]].to_csv(index=False).encode("utf-8"), file_name="rekap_pasien_per_kota.csv", mime="text/csv")
+if not grouped_valid.empty:
+    st.download_button("📥 Download Data Per Kota (CSV)", data=grouped_valid[["Kota", "Propinsi", "Jumlah Pasien", "lat", "lon"]].to_csv(index=False).encode("utf-8"), file_name="rekap_pasien_per_kota.csv", mime="text/csv")
 
 st.caption("Sumber: view **pwh.v_hospital_summary**. Koordinat diambil dari tabel lokal `public.kota_geo` (jika ada), fallback kamus statis, dan *opsional* geocoding online Nominatim/OSM.")
