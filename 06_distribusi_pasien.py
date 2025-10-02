@@ -169,7 +169,7 @@ grouped_valid = grouped_valid.dropna(subset=["lat", "lon"])
 
 if not grouped_valid.empty:
     grouped_valid["radius"] = (grouped_valid["Jumlah Pasien"] ** 0.5) * 2000
-    grouped_valid["label"] = grouped_valid.apply(lambda r: f"{r['Kota']}Pasien: {int(r['Jumlah Pasien'])}", axis=1)
+    grouped_valid["label"] = grouped_valid.apply(lambda r: f"{r['Kota']} : {int(r['Jumlah Pasien'])}", axis=1)
 
 st.subheader(f"📋 Rekap Per Kota (koordinat valid: {len(grouped_valid)}/{len(grouped)})")
 st.dataframe(grouped_valid[["Kota", "Propinsi", "Jumlah Pasien", "lat", "lon"]].sort_values("Jumlah Pasien", ascending=False), use_container_width=True, hide_index=True)
