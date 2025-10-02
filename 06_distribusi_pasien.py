@@ -115,7 +115,6 @@ def nominatim_geocode(city: str, province: str) -> Optional[tuple]:
     return None
 
 def lookup_coord(city: str, province: str, df_ref: pd.DataFrame) -> Optional[tuple]:
-    """Urutan lookup: tabel local -> kamus statis -> (opsional) OSM geocode."""
     c = (city or "").strip().lower()
     if c.startswith("kota "):
         c = c.replace("kota ", "", 1)
@@ -168,7 +167,6 @@ latlon.columns = ["lat", "lon"]
 grouped_valid = pd.concat([grouped_valid.drop(columns=["coord"]), latlon], axis=1)
 grouped_valid = grouped_valid.dropna(subset=["lat", "lon"])
 
-# hitung radius di python agar tidak error di pydeck JSON
 if not grouped_valid.empty:
     grouped_valid["radius"] = (grouped_valid["Jumlah Pasien"] ** 0.5) * 2000
 
@@ -181,13 +179,21 @@ scatter_layer = pdk.Layer("ScatterplotLayer", data=grouped_valid, get_position='
 
 tooltip = {"html": "<b>{Kota}, {Propinsi}</b><br/>Jumlah Pasien: {Jumlah Pasien}", "style": {"backgroundColor": "white", "color": "black"}}
 
+# otomatis pakai OSM jika tidak ada MAPBOX token
+def get_map_style():
+    token = st.secrets.get("MAPBOX_TOKEN", os.getenv("MAPBOX_TOKEN"))
+    if token:
+        pdk.settings.mapbox_api_key = token
+        return "mapbox://styles/mapbox/light-v9"
+    return None
+
 st.subheader("🗺️ Peta Persebaran")
 if grouped_valid.empty:
     st.info("Belum ada koordinat kota yang valid. Pastikan tabel public.kota_geo terisi atau aktifkan geocoding online.")
 else:
-    st.pydeck_chart(pdk.Deck(map_style="mapbox://styles/mapbox/light-v9", initial_view_state=def_view, layers=[heatmap_layer, scatter_layer], tooltip=tooltip))
+    st.pydeck_chart(pdk.Deck(map_style=get_map_style(), initial_view_state=def_view, layers=[heatmap_layer, scatter_layer], tooltip=tooltip))
 
 if not grouped_valid.empty:
     st.download_button("📥 Download Data Per Kota (CSV)", data=grouped_valid[["Kota", "Propinsi", "Jumlah Pasien", "lat", "lon"]].to_csv(index=False).encode("utf-8"), file_name="rekap_pasien_per_kota.csv", mime="text/csv")
 
-st.caption("Sumber: view **pwh.v_hospital_summary**. Koordinat diambil dari tabel lokal `public.kota_geo` (jika ada), fallback kamus statis, dan *opsional* geocoding online Nominatim/OSM.")
+st.caption("Sumber: view **pwh.v_hospital_summary**. Koordinat diambil dari tabel lokal `public.kota_geo` (jika ada), fallback kamus statis, dan *opsional* geocoding online Nominatim/OSM. Jika tidak ada MAPBOX_TOKEN, otomatis memakai OSM default.")
