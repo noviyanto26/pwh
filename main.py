@@ -62,8 +62,9 @@ MENU_ITEMS = {
     "📝 Input Data Pasien": "01_pwh_input.py",
     "📊 Rekapitulasi per Kelompok Usia": "02_rekap_pwh.py",
     "🚻 Rekapitulasi per Jenis Kelamin": "03_rekap_gender.py",
-    "🏥 RS Perawatan Hemofilia": "04_rs_hemofilia.py",               # ✅ baru
-    "📚 Rekap Pendidikan & Pekerjaan": "05_rekap_pend_pekerjaan.py", # ✅ baru
+    "🏥 RS Perawatan Hemofilia": "04_rs_hemofilia.py",               # ✅
+    "📚 Rekap Pendidikan & Pekerjaan": "05_rekap_pend_pekerjaan.py", # ✅
+    "🗺️ Distribusi Pasien per Kota": "06_distribusi_pasien.py",      # ✅ BARU
 }
 
 ICONS = [
@@ -71,7 +72,8 @@ ICONS = [
     "bar-chart",       # 📊
     "person-arms-up",  # 🚻
     "hospital",        # 🏥
-    "book"             # 📚
+    "book",            # 📚
+    "map"              # 🗺️ BARU
 ]
 
 # -----------------------------
