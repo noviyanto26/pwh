@@ -1,4 +1,4 @@
-# 01_pwh_input.py (Hanya Menampilkan Nama Pasien)
+# 01_pwh_input.py (Dengan tambahan kolom NIK)
 import os
 import io
 from datetime import date
@@ -21,6 +21,7 @@ def build_excel_bytes() -> bytes:
     p.full_name,
     p.birth_place,
     p.birth_date,
+    p.nik,
     COALESCE(pa.age_years, EXTRACT(YEAR FROM age(CURRENT_DATE, p.birth_date))) AS age_years,
     p.blood_group,
     p.rhesus,
@@ -105,7 +106,7 @@ ORDER BY p.id
             ws = writer.sheets[sheet]
             for col_idx, col_name in enumerate(df_sheet.columns):
                 max_len = max((df_sheet[col_name].astype(str).map(len).max() if not df_sheet.empty else 0),
-                                  len(str(col_name)))
+                                      len(str(col_name)))
                 ws.set_column(col_idx, col_idx, min(max_len + 2, 50))
     return output.getvalue()
 
@@ -134,6 +135,7 @@ def build_bulk_template_bytes() -> bytes:
     template_sheets = {
         "patients": [
             ("full_name", "text"), ("birth_place", "text"), ("birth_date", "date"),
+            ("nik", "text"),
             ("blood_group", ("list", blood_groups)), ("rhesus", ("list", rhesus)),
             ("gender", ("list", genders)),
             ("occupation", ("list", occupations)), ("education", ("list", education_levels)),
@@ -344,12 +346,12 @@ BLOOD_GROUPS = [""] + (fetch_enum_vals("blood_group_enum") or ["A","B","AB","O"]
 RHESUS       = [""] + (fetch_enum_vals("rhesus_enum")        or ["+","-"])
 GENDERS      = ["", "Laki-laki", "Perempuan"]
 EDUCATION_LEVELS = [""] + (fetch_enum_vals("education_enum") or ["Tidak sekolah", "SD", "SMP", "SMA/SMK", "Diploma", "S1", "S2", "S3"])
-HEMO_TYPES   = fetch_enum_vals("hemo_type_enum")     or ["A","B","vWD","Other"]
-SEVERITIES   = fetch_enum_vals("severity_enum")      or ["Ringan","Sedang","Berat","Tidak diketahui"]
+HEMO_TYPES   = fetch_enum_vals("hemo_type_enum")      or ["A","B","vWD","Other"]
+SEVERITIES   = fetch_enum_vals("severity_enum")       or ["Ringan","Sedang","Berat","Tidak diketahui"]
 INHIB_FACTORS= fetch_enum_vals("inhibitor_factor_enum") or ["FVIII","FIX"]
-VIRUS_TESTS  = fetch_enum_vals("virus_test_enum")    or ["HBsAg","Anti-HCV","HIV"]
-TEST_RESULTS = fetch_enum_vals("test_result_enum")   or ["positive","negative","indeterminate","unknown"]
-RELATIONS    = fetch_enum_vals("relation_enum")      or ["ayah","ibu","wali","pasien","lainnya"]
+VIRUS_TESTS  = fetch_enum_vals("virus_test_enum")     or ["HBsAg","Anti-HCV","HIV"]
+TEST_RESULTS = fetch_enum_vals("test_result_enum")    or ["positive","negative","indeterminate","unknown"]
+RELATIONS    = fetch_enum_vals("relation_enum")       or ["ayah","ibu","wali","pasien","lainnya"]
 PREFERRED_SEVERITY_ORDER = ["Ringan", "Sedang", "Berat", "Tidak diketahui"]
 SEVERITY_CHOICES = PREFERRED_SEVERITY_ORDER if all(x in SEVERITIES for x in PREFERRED_SEVERITY_ORDER) else SEVERITIES
 TREATMENT_TYPES = ["", "Prophylaxis", "On Demand"]
@@ -363,7 +365,7 @@ def _severity_default_index(choices: list[str]) -> int:
 # ------------------------------------------------------------------------------
 # Alias kolom (header) untuk tampilan
 # ------------------------------------------------------------------------------
-ALIAS_PATIENTS = {"full_name": "Nama Lengkap","birth_place": "Tempat Lahir","birth_date": "Tanggal Lahir", "age_years": "Umur (tahun)", "blood_group": "Gol. Darah","rhesus": "Rhesus", "gender": "Jenis Kelamin", "occupation": "Pekerjaan", "education": "Pendidikan Terakhir", "address": "Alamat","phone": "No. Ponsel","province": "Propinsi","city": "Kabupaten/Kota","created_at": "Dibuat"}
+ALIAS_PATIENTS = {"full_name": "Nama Lengkap","birth_place": "Tempat Lahir","birth_date": "Tanggal Lahir", "nik": "NIK", "age_years": "Umur (tahun)", "blood_group": "Gol. Darah","rhesus": "Rhesus", "gender": "Jenis Kelamin", "occupation": "Pekerjaan", "education": "Pendidikan Terakhir", "address": "Alamat","phone": "No. Ponsel","province": "Propinsi","city": "Kabupaten/Kota","created_at": "Dibuat"}
 ALIAS_DIAG = {"full_name": "Nama Lengkap","hemo_type": "Jenis Hemofilia","severity": "Kategori","diagnosed_on": "Tgl Diagnosis","source": "Sumber"}
 ALIAS_INH = {"full_name": "Nama Lengkap","factor": "Faktor","titer_bu": "Titer (BU)","measured_on": "Tgl Ukur","lab": "Lab"}
 ALIAS_VIRUS = {"full_name": "Nama Lengkap","test_type": "Jenis Tes","result": "Hasil","tested_on": "Tgl Tes","lab": "Lab"}
@@ -380,13 +382,13 @@ def _alias_df(df: pd.DataFrame, alias_map: dict) -> pd.DataFrame:
 # Helper Functions (INSERT, UPDATE)
 # ------------------------------------------------------------------------------
 def insert_patient(payload: dict) -> int:
-    sql = "INSERT INTO pwh.patients (full_name, birth_place, birth_date, blood_group, rhesus, gender, occupation, education, address, phone, province, city, note) VALUES (:full_name, :birth_place, :birth_date, :blood_group, :rhesus, :gender, :occupation, :education, :address, :phone, :province, :city, :note) RETURNING id;"
+    sql = "INSERT INTO pwh.patients (full_name, birth_place, birth_date, nik, blood_group, rhesus, gender, occupation, education, address, phone, province, city, note) VALUES (:full_name, :birth_place, :birth_date, :nik, :blood_group, :rhesus, :gender, :occupation, :education, :address, :phone, :province, :city, :note) RETURNING id;"
     with engine.begin() as conn:
         return int(conn.execute(text(sql), payload).scalar())
 
 def update_patient(id: int, payload: dict):
     payload['id'] = id
-    sql = "UPDATE pwh.patients SET full_name=:full_name, birth_place=:birth_place, birth_date=:birth_date, blood_group=:blood_group, rhesus=:rhesus, gender=:gender, occupation=:occupation, education=:education, address=:address, phone=:phone, province=:province, city=:city, note=:note WHERE id=:id;"
+    sql = "UPDATE pwh.patients SET full_name=:full_name, birth_place=:birth_place, birth_date=:birth_date, nik=:nik, blood_group=:blood_group, rhesus=:rhesus, gender=:gender, occupation=:occupation, education=:education, address=:address, phone=:phone, province=:province, city=:city, note=:note WHERE id=:id;"
     run_exec(sql, payload)
 
 def insert_diagnosis(patient_id: int, hemo_type: str, severity: str, diagnosed_on: date | None, source: str | None):
@@ -486,14 +488,15 @@ def import_bulk_excel(file) -> dict:
             return df.fillna(value=None).dropna(how="all")
         return pd.DataFrame(columns=cols)
 
-    pat_cols = ["full_name","birth_place","birth_date","blood_group","rhesus","gender","occupation", "education", "address","phone","province","city","note"]
+    pat_cols = ["full_name","birth_place","birth_date","nik","blood_group","rhesus","gender","occupation", "education", "address","phone","province","city","note"]
     df_pat = df_or_empty("patients", pat_cols)
     inserted_patients = []
     
     for _, r in df_pat[df_pat["full_name"].notna()].iterrows():
         payload = {
             "full_name": _safe_str(r.get("full_name")), "birth_place": _safe_str(r.get("birth_place")),
-            "birth_date": _to_date(r.get("birth_date")), "blood_group": _safe_str(r.get("blood_group")),
+            "birth_date": _to_date(r.get("birth_date")), "nik": _safe_str(r.get("nik")),
+            "blood_group": _safe_str(r.get("blood_group")),
             "rhesus": _safe_str(r.get("rhesus")), "gender": _safe_str(r.get("gender")),
             "occupation": _safe_str(r.get("occupation")), "education": _safe_str(r.get("education")),
             "address": _safe_str(r.get("address")), 
@@ -530,11 +533,11 @@ def import_bulk_excel(file) -> dict:
             })
         ),
         "kematian": ("kematian", ["patient_id", "full_name", "cause_of_death", "year_of_death"],
-                 lambda r, pid: insert_death_record({
-                     "patient_id": pid,
-                     "cause_of_death": _safe_str(r.get("cause_of_death")),
-                     "year_of_death": pd.to_numeric(r.get("year_of_death"), errors='coerce')
-                 })
+                     lambda r, pid: insert_death_record({
+                         "patient_id": pid,
+                         "cause_of_death": _safe_str(r.get("cause_of_death")),
+                         "year_of_death": pd.to_numeric(r.get("year_of_death"), errors='coerce')
+                     })
         ),
         "contacts": ("contacts", ["patient_id","full_name","relation","name","phone","is_primary"], lambda r, pid: insert_contact(pid, _safe_str(r.get("relation")), _safe_str(r.get("name")), _safe_str(r.get("phone")), _to_bool(r.get("is_primary")))),
     }
@@ -623,15 +626,20 @@ with tab_pat:
     
     with st.form("patients::form", clear_on_submit=False):
         full_name = st.text_input("Nama Lengkap*", value=pat_data.get('full_name', ''))
-        c1, c2, c3, c4 = st.columns(4)
+        
+        c1, c2, c3 = st.columns(3)
         with c1: birth_place = st.text_input("Tempat Lahir", value=pat_data.get('birth_place', ''))
         with c2:
             birth_date_val = pd.to_datetime(pat_data.get('birth_date')).date() if pd.notna(pat_data.get('birth_date')) else None
             birth_date = st.date_input("Tanggal Lahir", value=birth_date_val, format="YYYY-MM-DD", min_value=date(1920, 1, 1), max_value=date.today())
         with c3:
+            nik = st.text_input("NIK*", value=pat_data.get('nik', ''), max_chars=16)
+        
+        c_pekerjaan, c_pendidikan = st.columns(2)
+        with c_pekerjaan:
             occupation_idx = get_safe_index(occupations_list, pat_data.get('occupation'))
             occupation = st.selectbox("Pekerjaan", occupations_list, index=occupation_idx)
-        with c4:
+        with c_pendidikan:
             education_idx = get_safe_index(EDUCATION_LEVELS, pat_data.get('education'))
             education = st.selectbox("Pendidikan Terakhir", EDUCATION_LEVELS, index=education_idx)
         
@@ -667,10 +675,13 @@ with tab_pat:
     if submitted:
         if not (full_name or "").strip():
             st.error("Nama Lengkap wajib diisi.")
+        elif not (nik or "").strip():
+            st.error("NIK wajib diisi.")
         else:
             payload = {
                 "full_name": full_name.strip(), "birth_place": (birth_place or "").strip() or None,
-                "birth_date": birth_date, "blood_group": blood_group or None, "rhesus": rhesus or None,
+                "birth_date": birth_date, "nik": (nik or "").strip(),
+                "blood_group": blood_group or None, "rhesus": rhesus or None,
                 "gender": gender or None,
                 "occupation": occupation or None, "education": education or None,
                 "address": (address or "").strip() or None,
@@ -678,10 +689,18 @@ with tab_pat:
                 "city": city or None, "note": (note or "").strip() or None
             }
             if pat_data:
-                q_check = "SELECT id FROM pwh.patients WHERE lower(full_name) = lower(:name) AND id != :current_id"
-                existing = run_df(q_check, {"name": payload["full_name"], "current_id": pat_data['id']})
-                if not existing.empty:
-                    st.error(f"Nama '{payload['full_name']}' sudah digunakan oleh pasien lain (ID: {existing.iloc[0]['id']}). Gunakan nama yang unik.")
+                # Check for duplicate NIK (excluding self)
+                q_check_nik = "SELECT id FROM pwh.patients WHERE nik = :nik AND id != :current_id"
+                existing_nik = run_df(q_check_nik, {"nik": payload["nik"], "current_id": pat_data['id']})
+                
+                # Check for duplicate Name (excluding self)
+                q_check_name = "SELECT id FROM pwh.patients WHERE lower(full_name) = lower(:name) AND id != :current_id"
+                existing_name = run_df(q_check_name, {"name": payload["full_name"], "current_id": pat_data['id']})
+                
+                if not existing_nik.empty:
+                    st.error(f"NIK '{payload['nik']}' sudah digunakan oleh pasien lain (ID: {existing_nik.iloc[0]['id']}).")
+                elif not existing_name.empty:
+                    st.error(f"Nama '{payload['full_name']}' sudah digunakan oleh pasien lain (ID: {existing_name.iloc[0]['id']}). Gunakan nama yang unik.")
                 else:
                     update_patient(pat_data['id'], payload)
                     st.success(f"Pasien dengan ID {pat_data['id']} berhasil diperbarui.")
@@ -690,10 +709,18 @@ with tab_pat:
                     clear_session_state('patient_matches')
                     st.rerun()
             else:
-                q_check = "SELECT id FROM pwh.patients WHERE lower(full_name) = lower(:name)"
-                existing = run_df(q_check, {"name": payload["full_name"]})
-                if not existing.empty:
-                    st.error(f"Nama '{payload['full_name']}' sudah ada di database dengan ID: {existing.iloc[0]['id']}. Gunakan nama lain.")
+                # Check for duplicate NIK
+                q_check_nik = "SELECT id FROM pwh.patients WHERE nik = :nik"
+                existing_nik = run_df(q_check_nik, {"nik": payload["nik"]})
+
+                # Check for duplicate Name
+                q_check_name = "SELECT id FROM pwh.patients WHERE lower(full_name) = lower(:name)"
+                existing_name = run_df(q_check_name, {"name": payload["full_name"]})
+                
+                if not existing_nik.empty:
+                    st.error(f"NIK '{payload['nik']}' sudah ada di database dengan ID: {existing_nik.iloc[0]['id']}. Gunakan NIK lain.")
+                elif not existing_name.empty:
+                    st.error(f"Nama '{payload['full_name']}' sudah ada di database dengan ID: {existing_name.iloc[0]['id']}. Gunakan nama lain.")
                 else:
                     pid = insert_patient(payload)
                     st.success(f"Pasien baru berhasil disimpan dengan ID: {pid}")
@@ -741,6 +768,7 @@ SELECT
     p.full_name,
     p.birth_place,
     p.birth_date,
+    p.nik,
     COALESCE(pa.age_years, EXTRACT(YEAR FROM age(CURRENT_DATE, p.birth_date))) AS age_years,
     p.blood_group,
     p.rhesus,
@@ -763,6 +791,7 @@ LIMIT 200;
         dfp_display = dfp.copy()
         dfp_display['birth_place'] = dfp_display['birth_place'].apply(lambda x: '*****' if pd.notna(x) and str(x).strip() else x)
         dfp_display['birth_date'] = dfp_display['birth_date'].apply(lambda x: '*****' if pd.notna(x) else x)
+        dfp_display['nik'] = dfp_display['nik'].apply(lambda x: '*****' if pd.notna(x) and str(x).strip() else x)
         dfp_display['phone'] = dfp_display['phone'].apply(lambda x: '*****' if pd.notna(x) and str(x).strip() else x)
         
         dfp_display = dfp_display.drop(columns=['id'], errors='ignore')
