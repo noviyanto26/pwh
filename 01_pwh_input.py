@@ -623,31 +623,8 @@ with tab_pat:
 
     df_wilayah = fetch_all_cities_with_province()
     occupations_list = fetch_occupations_list()
-
-    # ================== PERUBAHAN DIMULAI DI SINI ==================
-    # Widget interaktif (Kota -> Propinsi) diletakkan di luar form.
     
-    col_city, col_prov = st.columns(2)
-    with col_city:
-        city_list = [""] + df_wilayah['city_name'].tolist()
-        # Ambil nilai default dari data yang sedang diedit
-        city_idx = get_safe_index(city_list, pat_data.get('city'))
-        city = st.selectbox("Kabupaten/Kota", city_list, index=city_idx)
-
-    # Logika untuk autoload propinsi
-    province_name = ""
-    if city:
-        matching_province_df = df_wilayah[df_wilayah['city_name'] == city]
-        if not matching_province_df.empty:
-            province_name = matching_province_df['province_name'].iloc[0]
-
-    with col_prov:
-        st.text_input("Propinsi (otomatis)", value=province_name, disabled=True)
-    
-    # ================== AKHIR DARI PERUBAHAN ==================
-
     with st.form("patients::form", clear_on_submit=False):
-        # Input lain tetap di dalam form
         full_name = st.text_input("Nama Lengkap*", value=pat_data.get('full_name', ''))
         
         c1, c2, c3 = st.columns(3)
@@ -680,6 +657,29 @@ with tab_pat:
             phone = st.text_input("No. Ponsel", max_chars=50, value=pat_data.get('phone', ''))
             
         address = st.text_area("Alamat", value=pat_data.get('address', ''))
+
+        col_city, col_prov = st.columns(2)
+        with col_city:
+            city_list = [""] + df_wilayah['city_name'].tolist()
+            city_idx = get_safe_index(city_list, pat_data.get('city'))
+            city = st.selectbox("Kabupaten/Kota", city_list, index=city_idx)
+
+        # ---- PERUBAHAN DI BLOK INI ----
+        # Logika untuk mengisi propinsi secara otomatis berdasarkan kota yang dipilih.
+        # Variabel 'province_name' akan digunakan untuk tampilan dan untuk disimpan ke database.
+        province_name = ""  # Nilai default jika tidak ada kota yang dipilih
+        if city:
+            # Cari baris di DataFrame wilayah yang cocok dengan kota yang dipilih
+            matching_province_df = df_wilayah[df_wilayah['city_name'] == city]
+            if not matching_province_df.empty:
+                # Jika ditemukan, ambil nama propinsi dari baris pertama
+                province_name = matching_province_df['province_name'].iloc[0]
+
+        with col_prov:
+            # Tampilkan nama propinsi di text input yang non-aktif (read-only)
+            st.text_input("Propinsi (otomatis)", value=province_name, disabled=True)
+        # ---- AKHIR PERUBAHAN ----
+
         note = st.text_area("Catatan (opsional)", value=pat_data.get('note', ''))
         
         form_label = "💾 Perbarui Pasien" if pat_data else "💾 Simpan Pasien Baru"
@@ -691,7 +691,6 @@ with tab_pat:
         elif not (nik or "").strip():
             st.error("NIK wajib diisi.")
         else:
-            # Saat submit, ambil nilai `city` dan `province_name` dari luar form
             payload = {
                 "full_name": full_name.strip(), "birth_place": (birth_place or "").strip() or None,
                 "birth_date": birth_date, "nik": (nik or "").strip(),
@@ -740,6 +739,7 @@ with tab_pat:
                     st.success(f"Pasien baru berhasil disimpan dengan ID: {pid}")
                     get_all_patients_for_selection.clear()
                     st.rerun()
+
 
     st.markdown("---")
     st.markdown("### 📋 Data Pasien Terbaru")
