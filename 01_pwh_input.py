@@ -1,4 +1,4 @@
-# 01_pwh_input.py (Dengan tambahan kolom NIK)
+# 01_pwh_input.py (Dengan tambahan kolom NIK dan autoload Propinsi)
 import os
 import io
 from datetime import date
@@ -663,9 +663,22 @@ with tab_pat:
             city_list = [""] + df_wilayah['city_name'].tolist()
             city_idx = get_safe_index(city_list, pat_data.get('city'))
             city = st.selectbox("Kabupaten/Kota", city_list, index=city_idx)
+
+        # ---- PERUBAHAN DI BLOK INI ----
+        # Logika untuk mengisi propinsi secara otomatis berdasarkan kota yang dipilih.
+        # Variabel 'province_name' akan digunakan untuk tampilan dan untuk disimpan ke database.
+        province_name = ""  # Nilai default jika tidak ada kota yang dipilih
+        if city:
+            # Cari baris di DataFrame wilayah yang cocok dengan kota yang dipilih
+            matching_province_df = df_wilayah[df_wilayah['city_name'] == city]
+            if not matching_province_df.empty:
+                # Jika ditemukan, ambil nama propinsi dari baris pertama
+                province_name = matching_province_df['province_name'].iloc[0]
+
         with col_prov:
-            province_name = df_wilayah[df_wilayah['city_name'] == city]['province_name'].iloc[0] if city else ""
+            # Tampilkan nama propinsi di text input yang non-aktif (read-only)
             st.text_input("Propinsi (otomatis)", value=province_name, disabled=True)
+        # ---- AKHIR PERUBAHAN ----
 
         note = st.text_area("Catatan (opsional)", value=pat_data.get('note', ''))
         
@@ -978,7 +991,7 @@ with tab_inh:
             st.success("Riwayat inhibitor ditambahkan.")
             st.rerun()
         else:
-             if not inh_data: st.warning("Silakan pilih pasien terlebih dahulu.")
+                 if not inh_data: st.warning("Silakan pilih pasien terlebih dahulu.")
 
     st.markdown("---")
     st.markdown("### 📋 Data Inhibitor Terbaru")
@@ -1424,7 +1437,7 @@ with tab_contacts:
         if not name.strip():
             st.error("Nama Kontak wajib diisi.")
         elif not relation:
-             st.error("Relasi wajib diisi.")
+                 st.error("Relasi wajib diisi.")
         else:
             payload = {"relation": relation, "name": name, "phone": (phone or "").strip() or None, "is_primary": is_primary}
             if cont_data:
