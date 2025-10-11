@@ -624,7 +624,11 @@ with tab_pat:
     df_wilayah = fetch_all_cities_with_province()
     occupations_list = fetch_occupations_list()
     
-    with st.form("patients::form", clear_on_submit=False):
+    # ================== PERUBAHAN UTAMA DI SINI ==================
+    # Menggunakan st.container(border=True) sebagai pengganti st.form
+    # untuk menjaga tampilan tetap rapi sambil memungkinkan autoload.
+    
+    with st.container(border=True):
         full_name = st.text_input("Nama Lengkap*", value=pat_data.get('full_name', ''))
         
         c1, c2, c3 = st.columns(3)
@@ -658,32 +662,27 @@ with tab_pat:
             
         address = st.text_area("Alamat", value=pat_data.get('address', ''))
 
+        # Logika autoload sekarang berada di dalam container
         col_city, col_prov = st.columns(2)
         with col_city:
             city_list = [""] + df_wilayah['city_name'].tolist()
             city_idx = get_safe_index(city_list, pat_data.get('city'))
             city = st.selectbox("Kabupaten/Kota", city_list, index=city_idx)
-
-        # ---- PERUBAHAN DI BLOK INI ----
-        # Logika untuk mengisi propinsi secara otomatis berdasarkan kota yang dipilih.
-        # Variabel 'province_name' akan digunakan untuk tampilan dan untuk disimpan ke database.
-        province_name = ""  # Nilai default jika tidak ada kota yang dipilih
+        
+        province_name = ""
         if city:
-            # Cari baris di DataFrame wilayah yang cocok dengan kota yang dipilih
             matching_province_df = df_wilayah[df_wilayah['city_name'] == city]
             if not matching_province_df.empty:
-                # Jika ditemukan, ambil nama propinsi dari baris pertama
                 province_name = matching_province_df['province_name'].iloc[0]
 
         with col_prov:
-            # Tampilkan nama propinsi di text input yang non-aktif (read-only)
             st.text_input("Propinsi (otomatis)", value=province_name, disabled=True)
-        # ---- AKHIR PERUBAHAN ----
 
         note = st.text_area("Catatan (opsional)", value=pat_data.get('note', ''))
         
+        # Menggunakan st.button biasa sebagai pengganti st.form_submit_button
         form_label = "💾 Perbarui Pasien" if pat_data else "💾 Simpan Pasien Baru"
-        submitted = st.form_submit_button(form_label, type="primary")
+        submitted = st.button(form_label, type="primary")
 
     if submitted:
         if not (full_name or "").strip():
@@ -702,14 +701,11 @@ with tab_pat:
                 "city": city or None, "note": (note or "").strip() or None
             }
             if pat_data:
-                # Check for duplicate NIK (excluding self)
+                # Logika update (tidak berubah)
                 q_check_nik = "SELECT id FROM pwh.patients WHERE nik = :nik AND id != :current_id"
                 existing_nik = run_df(q_check_nik, {"nik": payload["nik"], "current_id": pat_data['id']})
-                
-                # Check for duplicate Name (excluding self)
                 q_check_name = "SELECT id FROM pwh.patients WHERE lower(full_name) = lower(:name) AND id != :current_id"
                 existing_name = run_df(q_check_name, {"name": payload["full_name"], "current_id": pat_data['id']})
-                
                 if not existing_nik.empty:
                     st.error(f"NIK '{payload['nik']}' sudah digunakan oleh pasien lain (ID: {existing_nik.iloc[0]['id']}).")
                 elif not existing_name.empty:
@@ -722,14 +718,11 @@ with tab_pat:
                     clear_session_state('patient_matches')
                     st.rerun()
             else:
-                # Check for duplicate NIK
+                # Logika insert (tidak berubah)
                 q_check_nik = "SELECT id FROM pwh.patients WHERE nik = :nik"
                 existing_nik = run_df(q_check_nik, {"nik": payload["nik"]})
-
-                # Check for duplicate Name
                 q_check_name = "SELECT id FROM pwh.patients WHERE lower(full_name) = lower(:name)"
                 existing_name = run_df(q_check_name, {"name": payload["full_name"]})
-                
                 if not existing_nik.empty:
                     st.error(f"NIK '{payload['nik']}' sudah ada di database dengan ID: {existing_nik.iloc[0]['id']}. Gunakan NIK lain.")
                 elif not existing_name.empty:
@@ -739,7 +732,6 @@ with tab_pat:
                     st.success(f"Pasien baru berhasil disimpan dengan ID: {pid}")
                     get_all_patients_for_selection.clear()
                     st.rerun()
-
 
     st.markdown("---")
     st.markdown("### 📋 Data Pasien Terbaru")
