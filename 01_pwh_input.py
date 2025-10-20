@@ -29,6 +29,8 @@ def build_excel_bytes() -> bytes:
     p.occupation,
     p.education,
     p.address,
+    p.village,
+    p.district,
     p.phone,
     p.province,
     p.city,
@@ -163,7 +165,9 @@ def build_bulk_template_bytes() -> bytes:
             ("gender", ("list", genders)),
             ("occupation", ("list", occupations)), ("education", ("list", education_levels)),
             ("address", "text"),
-            ("phone", "text"), ("province", "text"), ("city", "text"), ("note", "text"),
+            ("phone", "text"), ("province", "text"), ("city", "text"),
+            ("district", "text"), ("village", "text"),
+            ("note", "text"),
         ],
         "diagnoses": [
             ("patient_id", "int"), ("full_name", "text"),
@@ -317,30 +321,43 @@ def fetch_occupations_list() -> list[str]:
     except Exception: pass
     return ["","Tidak bekerja","Nelayan","Petani","PNS/TNI/Polri","Karyawan Swasta","Wiraswasta","Pensiunan"]
 
-@st.cache_data(show_spinner=False)
-def fetch_all_cities_with_province() -> pd.DataFrame:
+@st.cache_data(show_spinner="Memuat data wilayah...")
+def fetch_all_wilayah_details() -> pd.DataFrame:
+    """Mengambil data lengkap wilayah (Kelurahan, Kecamatan, Kota, Propinsi) dari DB."""
     try:
         q = """
-            SELECT
-                kota.nama AS city_name,
-                prov.nama AS province_name
-            FROM
-                public.wilayah AS kota
-            JOIN
-                public.wilayah AS prov ON LEFT(kota.kode, 2) = prov.kode
-            WHERE
-                LENGTH(kota.kode) IN (4, 5) AND LENGTH(prov.kode) = 2
-            ORDER BY
-                kota.nama;
+        SELECT
+            kel.nama AS village_name,
+            kec.nama AS district_name,
+            kota.nama AS city_name,
+            prov.nama AS province_name,
+            CONCAT_WS(' - ', kel.nama, kec.nama, kota.nama, prov.nama) AS full_display
+        FROM
+            public.wilayah AS kel
+        JOIN
+            public.wilayah AS kec ON kec.kode = LEFT(kel.kode, 8) -- e.g., 32.75.01
+        JOIN
+            public.wilayah AS kota ON kota.kode = LEFT(kel.kode, 5) -- e.g., 32.75
+        JOIN
+            public.wilayah AS prov ON prov.kode = LEFT(kel.kode, 2) -- e.g., 32
+        WHERE
+            LENGTH(kel.kode) = 13  -- Standard code length for village
+        ORDER BY
+            full_display;
         """
         df = run_df(q)
         if not df.empty:
             return df
-    except Exception:
+    except Exception as e:
+        st.warning(f"Gagal memuat data wilayah: {e}")
         pass
+    # Fallback data jika query gagal
     return pd.DataFrame({
-        'city_name': ['KOTA BANDUNG', 'KOTA BEKASI', 'KOTA JAKARTA PUSAT'],
-        'province_name': ['JAWA BARAT', 'JAWA BARAT', 'DKI JAKARTA']
+        'village_name': ['MUSTIKA JAYA'],
+        'district_name': ['MUSTIKA JAYA'],
+        'city_name': ['KOTA BEKASI'],
+        'province_name': ['JAWA BARAT'],
+        'full_display': ['MUSTIKA JAYA - MUSTIKA JAYA - KOTA BEKASI - JAWA BARAT']
     })
 
 
@@ -388,7 +405,7 @@ def _severity_default_index(choices: list[str]) -> int:
 # ------------------------------------------------------------------------------
 # Alias kolom (header) untuk tampilan
 # ------------------------------------------------------------------------------
-ALIAS_PATIENTS = {"full_name": "Nama Lengkap","birth_place": "Tempat Lahir","birth_date": "Tanggal Lahir", "nik": "NIK", "age_years": "Umur (tahun)", "blood_group": "Gol. Darah","rhesus": "Rhesus", "gender": "Jenis Kelamin", "occupation": "Pekerjaan", "education": "Pendidikan Terakhir", "address": "Alamat","phone": "No. Ponsel","province": "Propinsi","city": "Kabupaten/Kota","created_at": "Dibuat"}
+ALIAS_PATIENTS = {"full_name": "Nama Lengkap","birth_place": "Tempat Lahir","birth_date": "Tanggal Lahir", "nik": "NIK", "age_years": "Umur (tahun)", "blood_group": "Gol. Darah","rhesus": "Rhesus", "gender": "Jenis Kelamin", "occupation": "Pekerjaan", "education": "Pendidikan Terakhir", "address": "Alamat", "village": "Kelurahan/Desa", "district": "Kecamatan", "phone": "No. Ponsel","province": "Propinsi","city": "Kabupaten/Kota","created_at": "Dibuat"}
 ALIAS_DIAG = {"full_name": "Nama Lengkap","hemo_type": "Jenis Hemofilia","severity": "Kategori","diagnosed_on": "Tgl Diagnosis","source": "Sumber"}
 ALIAS_INH = {"full_name": "Nama Lengkap","factor": "Faktor","titer_bu": "Titer (BU)","measured_on": "Tgl Ukur","lab": "Lab"}
 ALIAS_VIRUS = {"full_name": "Nama Lengkap","test_type": "Jenis Tes","result": "Hasil","tested_on": "Tgl Tes","lab": "Lab"}
@@ -405,13 +422,13 @@ def _alias_df(df: pd.DataFrame, alias_map: dict) -> pd.DataFrame:
 # Helper Functions (INSERT, UPDATE)
 # ------------------------------------------------------------------------------
 def insert_patient(payload: dict) -> int:
-    sql = "INSERT INTO pwh.patients (full_name, birth_place, birth_date, nik, blood_group, rhesus, gender, occupation, education, address, phone, province, city, note) VALUES (:full_name, :birth_place, :birth_date, :nik, :blood_group, :rhesus, :gender, :occupation, :education, :address, :phone, :province, :city, :note) RETURNING id;"
+    sql = "INSERT INTO pwh.patients (full_name, birth_place, birth_date, nik, blood_group, rhesus, gender, occupation, education, address, phone, province, city, note, village, district) VALUES (:full_name, :birth_place, :birth_date, :nik, :blood_group, :rhesus, :gender, :occupation, :education, :address, :phone, :province, :city, :note, :village, :district) RETURNING id;"
     with engine.begin() as conn:
         return int(conn.execute(text(sql), payload).scalar())
 
 def update_patient(id: int, payload: dict):
     payload['id'] = id
-    sql = "UPDATE pwh.patients SET full_name=:full_name, birth_place=:birth_place, birth_date=:birth_date, nik=:nik, blood_group=:blood_group, rhesus=:rhesus, gender=:gender, occupation=:occupation, education=:education, address=:address, phone=:phone, province=:province, city=:city, note=:note WHERE id=:id;"
+    sql = "UPDATE pwh.patients SET full_name=:full_name, birth_place=:birth_place, birth_date=:birth_date, nik=:nik, blood_group=:blood_group, rhesus=:rhesus, gender=:gender, occupation=:occupation, education=:education, address=:address, phone=:phone, province=:province, city=:city, note=:note, village=:village, district=:district WHERE id=:id;"
     run_exec(sql, payload)
 
 def insert_diagnosis(patient_id: int, hemo_type: str, severity: str, diagnosed_on: date | None, source: str | None):
@@ -511,7 +528,7 @@ def import_bulk_excel(file) -> dict:
             return df.fillna(value=None).dropna(how="all")
         return pd.DataFrame(columns=cols)
 
-    pat_cols = ["full_name","birth_place","birth_date","nik","blood_group","rhesus","gender","occupation", "education", "address","phone","province","city","note"]
+    pat_cols = ["full_name","birth_place","birth_date","nik","blood_group","rhesus","gender","occupation", "education", "address","phone","province","city","note", "village", "district"]
     df_pat = df_or_empty("patients", pat_cols)
     inserted_patients = []
     
@@ -524,7 +541,8 @@ def import_bulk_excel(file) -> dict:
             "occupation": _safe_str(r.get("occupation")), "education": _safe_str(r.get("education")),
             "address": _safe_str(r.get("address")), 
             "phone": _safe_str(r.get("phone")), "province": _safe_str(r.get("province")), 
-            "city": _safe_str(r.get("city")), "note": _safe_str(r.get("note"))
+            "city": _safe_str(r.get("city")), "note": _safe_str(r.get("note")),
+            "village": _safe_str(r.get("village")), "district": _safe_str(r.get("district"))
         }
         pid = insert_patient(payload)
         inserted_patients.append((pid, payload["full_name"]))
@@ -644,7 +662,7 @@ with tab_pat:
             clear_session_state('patient_matches') # Hapus juga hasil pencarian
             st.rerun()
 
-    df_wilayah = fetch_all_cities_with_province()
+    df_wilayah_all = fetch_all_wilayah_details()
     occupations_list = fetch_occupations_list()
     
     # ================== PERUBAHAN UTAMA DI SINI ==================
@@ -685,21 +703,61 @@ with tab_pat:
             
         address = st.text_area("Alamat", value=pat_data.get('address', ''))
 
-        # Logika autoload sekarang berada di dalam container
-        col_city, col_prov = st.columns(2)
-        with col_city:
-            city_list = [""] + df_wilayah['city_name'].tolist()
-            city_idx = get_safe_index(city_list, pat_data.get('city'))
-            city = st.selectbox("Kabupaten/Kota", city_list, index=city_idx)
+        # --- START: Logika Wilayah Autofill ---
         
-        province_name = ""
-        if city:
-            matching_province_df = df_wilayah[df_wilayah['city_name'] == city]
-            if not matching_province_df.empty:
-                province_name = matching_province_df['province_name'].iloc[0]
+        # 1. Siapkan list dan nilai default
+        village_list = [""] + df_wilayah_all['full_display'].tolist()
+        village_name, district_name, city_name, province_name = "", "", "", ""
+        
+        # 2. Cek data yang ada (jika mode edit)
+        village_display_val = ""
+        if pat_data:
+            v = pat_data.get('village')
+            d = pat_data.get('district')
+            c = pat_data.get('city')
+            p = pat_data.get('province')
+            
+            # Rekonstruksi string 'full_display' jika semua datanya ada
+            if v and d and c and p:
+                village_display_val = f"{v} - {d} - {c} - {p}"
+            
+            # Fallback jika data tidak lengkap (misal data lama)
+            if not village_display_val:
+                village_name = v or ""
+                district_name = d or ""
+                city_name = c or ""
+                province_name = p or ""
 
+        village_idx = get_safe_index(village_list, village_display_val)
+        
+        # 3. Buat Selectbox untuk Kelurahan
+        selected_village_display = st.selectbox(
+            "Kelurahan/Desa (pilih ini untuk mengisi otomatis Kecamatan, Kota, dan Propinsi)",
+            village_list,
+            index=village_idx
+        )
+        
+        # 4. Logika Autoload
+        if selected_village_display:
+            match = df_wilayah_all[df_wilayah_all['full_display'] == selected_village_display]
+            if not match.empty:
+                village_name = match.iloc[0]['village_name']
+                district_name = match.iloc[0]['district_name']
+                city_name = match.iloc[0]['city_name']
+                province_name = match.iloc[0]['province_name']
+
+        # 5. Tampilkan field yang terisi otomatis
+        col_kec, col_city = st.columns(2)
+        with col_kec:
+            st.text_input("Kecamatan (otomatis)", value=district_name, disabled=True)
+        with col_city:
+            st.text_input("Kabupaten/Kota (otomatis)", value=city_name, disabled=True)
+        
+        col_prov, _ = st.columns(2) # Gunakan 2 kolom agar layout konsisten
         with col_prov:
             st.text_input("Propinsi (otomatis)", value=province_name, disabled=True)
+            
+        # --- END: Logika Wilayah Autofill ---
 
         note = st.text_area("Catatan (opsional)", value=pat_data.get('note', ''))
         
@@ -720,8 +778,14 @@ with tab_pat:
                 "gender": gender or None,
                 "occupation": occupation or None, "education": education or None,
                 "address": (address or "").strip() or None,
-                "phone": (phone or "").strip() or None, "province": (province_name or "").strip() or None,
-                "city": city or None, "note": (note or "").strip() or None
+                "phone": (phone or "").strip() or None, 
+                # -- Data dari Autofill --
+                "province": (province_name or "").strip() or None,
+                "city": (city_name or "").strip() or None,
+                "district": (district_name or "").strip() or None,
+                "village": (village_name or "").strip() or None,
+                # ------------------------
+                "note": (note or "").strip() or None
             }
             if pat_data:
                 # Logika update (tidak berubah)
@@ -804,6 +868,8 @@ SELECT
     p.occupation,
     p.education,
     p.address,
+    p.village,
+    p.district,
     p.phone,
     p.province,
     p.city,
