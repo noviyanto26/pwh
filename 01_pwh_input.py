@@ -70,6 +70,29 @@ ORDER BY p.id
         ORDER BY c.patient_id, c.id
     """)
     df_summary = run_df("""SELECT * FROM pwh.patient_summary ORDER BY id""")
+    
+    # --- FIX: Hapus Timezone dari Datetime Columns ---
+    # Excel (via xlsxwriter) tidak mendukung datetime yang 'timezone-aware' (misal: UTC)
+    # Kita harus membuatnya 'naive' (menghapus info timezone) sebelum di-write.
+    
+    # 1. Kolom spesifik di df_patients (created_at)
+    if 'created_at' in df_patients.columns and pd.api.types.is_datetime64_any_dtype(df_patients['created_at']):
+        try:
+            if df_patients['created_at'].dt.tz is not None:
+                df_patients['created_at'] = df_patients['created_at'].dt.tz_localize(None)
+        except AttributeError:
+            pass # Lanjut jika kolom kosong/NaT
+
+    # 2. Sanitasi umum untuk df_summary (karena kita tidak tahu kolomnya dari SELECT *)
+    for col in df_summary.columns:
+        if pd.api.types.is_datetime64_any_dtype(df_summary[col]):
+            try:
+                if df_summary[col].dt.tz is not None:
+                    df_summary[col] = df_summary[col].dt.tz_localize(None)
+            except AttributeError:
+                pass # Lanjut jika kolom kosong/NaT
+    # --- END FIX ---
+
 
     # Alias sheet agar ramah dilihat
     a_patients  = _alias_df(df_patients, ALIAS_PATIENTS)
