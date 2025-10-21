@@ -72,11 +72,11 @@ ORDER BY p.id
         ORDER BY c.patient_id, c.id
     """)
     df_summary = run_df("""SELECT * FROM pwh.patient_summary ORDER BY id""")
-    
+
     # --- FIX: Hapus Timezone dari Datetime Columns ---
     # Excel (via xlsxwriter) tidak mendukung datetime yang 'timezone-aware' (misal: UTC)
     # Kita harus membuatnya 'naive' (menghapus info timezone) sebelum di-write.
-    
+
     # 1. Kolom spesifik di df_patients (created_at)
     if 'created_at' in df_patients.columns and pd.api.types.is_datetime64_any_dtype(df_patients['created_at']):
         try:
@@ -108,24 +108,27 @@ ORDER BY p.id
 
     output = io.BytesIO()
     with ExcelWriter(output, engine="xlsxwriter", datetime_format="yyyy-mm-dd", date_format="yyyy-mm-dd") as writer:
-        a_patients.to_excel(writer, sheet_name="patients", index=False)
-        a_diag.to_excel(writer, sheet_name="diagnoses", index=False)
-        a_inh.to_excel(writer, sheet_name="inhibitors", index=False)
-        a_virus.to_excel(writer, sheet_name="virus_tests", index=False)
-        a_hospital.to_excel(writer, sheet_name="treatment_hospitals", index=False)
-        a_death.to_excel(writer, sheet_name="kematian", index=False)
-        a_contacts.to_excel(writer, sheet_name="contacts", index=False)
-        a_summary.to_excel(writer, sheet_name="patient_summary", index=False)
+        # --- PERUBAHAN: Gunakan nama sheet Bahasa Indonesia untuk EXPORT ---
+        a_patients.to_excel(writer, sheet_name="Pasien", index=False)
+        a_diag.to_excel(writer, sheet_name="Diagnosa", index=False)
+        a_inh.to_excel(writer, sheet_name="Inhibitor", index=False)
+        a_virus.to_excel(writer, sheet_name="Virus Tes", index=False)
+        a_hospital.to_excel(writer, sheet_name="RS Penangan", index=False)
+        a_death.to_excel(writer, sheet_name="Kematian", index=False)
+        a_contacts.to_excel(writer, sheet_name="Kontak", index=False)
+        a_summary.to_excel(writer, sheet_name="Ringkasan Pasien", index=False)
+        # --- END PERUBAHAN ---
+
         # Auto-fit kolom sederhana
         sheet_map = {
-            "patients": a_patients,
-            "diagnoses": a_diag,
-            "inhibitors": a_inh,
-            "virus_tests": a_virus,
-            "treatment_hospitals": a_hospital,
-            "kematian": a_death,
-            "contacts": a_contacts,
-            "patient_summary": a_summary,
+            "Pasien": a_patients,
+            "Diagnosa": a_diag,
+            "Inhibitor": a_inh,
+            "Virus Tes": a_virus,
+            "RS Penangan": a_hospital,
+            "Kematian": a_death,
+            "Kontak": a_contacts,
+            "Ringkasan Pasien": a_summary,
         }
         for sheet, df_sheet in sheet_map.items():
             ws = writer.sheets[sheet]
@@ -157,52 +160,54 @@ def build_bulk_template_bytes() -> bytes:
     care_services = ["Rawat Jalan", "Rawat Inap"]
     products = ["Plasma (FFP)","Cryoprecipitate","Konsentrat (plasma derived)","Konsentrat (rekombinan)","Konsentrat (prolonged half life)","Prothrombin Complex","DDAVP","Emicizumab (Hemlibra)","Konsentrat Bypassing Agent"]
 
+    # --- PERUBAHAN: Gunakan nama sheet dan kolom Bahasa Indonesia ---
     template_sheets = {
-        "patients": [
-            ("full_name", "text"), ("birth_place", "text"), ("birth_date", "date"),
-            ("nik", "text"),
-            ("blood_group", ("list", blood_groups)), ("rhesus", ("list", rhesus)),
-            ("gender", ("list", genders)),
-            ("occupation", ("list", occupations)), ("education", ("list", education_levels)),
-            ("address", "text"),
-            ("phone", "text"), ("province", "text"), ("city", "text"),
-            ("district", "text"), ("village", "text"),
-            ("note", "text"),
+        "Pasien": [
+            ("Nama Lengkap", "text"), ("Tempat Lahir", "text"), ("Tanggal Lahir", "date"),
+            ("NIK", "text"),
+            ("Gol. Darah", ("list", blood_groups)), ("Rhesus", ("list", rhesus)),
+            ("Jenis Kelamin", ("list", genders)),
+            ("Pekerjaan", ("list", occupations)), ("Pendidikan Terakhir", ("list", education_levels)),
+            ("Alamat", "text"),
+            ("No. Ponsel", "text"), ("Propinsi", "text"), ("Kabupaten/Kota", "text"),
+            ("Kecamatan", "text"), ("Kelurahan/Desa", "text"),
+            ("Catatan", "text"),
         ],
-        "diagnoses": [
-            ("patient_id", "int"), ("full_name", "text"),
-            ("hemo_type", ("list", hemo_types)), ("severity", ("list", severities)),
-            ("diagnosed_on", "date"), ("source", "text"),
+        "Diagnosa": [
+            ("patient_id", "int"), ("Nama Lengkap", "text"),
+            ("Jenis Hemofilia", ("list", hemo_types)), ("Kategori", ("list", severities)),
+            ("Tgl Diagnosis", "date"), ("Sumber", "text"),
         ],
-        "inhibitors": [
-            ("patient_id", "int"), ("full_name", "text"),
-            ("factor", ("list", inhibitor_factors)), ("titer_bu", "number"),
-            ("measured_on", "date"), ("lab", "text"),
+        "Inhibitor": [
+            ("patient_id", "int"), ("Nama Lengkap", "text"),
+            ("Faktor", ("list", inhibitor_factors)), ("Titer (BU)", "number"),
+            ("Tgl Ukur", "date"), ("Lab", "text"),
         ],
-        "virus_tests": [
-            ("patient_id", "int"), ("full_name", "text"),
-            ("test_type", ("list", virus_tests)), ("result", ("list", test_results)),
-            ("tested_on", "date"), ("lab", "text"),
+        "Virus Tes": [
+            ("patient_id", "int"), ("Nama Lengkap", "text"),
+            ("Jenis Tes", ("list", virus_tests)), ("Hasil", ("list", test_results)),
+            ("Tgl Tes", "date"), ("Lab", "text"),
         ],
-        "treatment_hospitals": [
-            ("patient_id", "int"), ("full_name", "text"),
-            ("name_hospital", "text"), ("city_hospital", "text"), ("province_hospital", "text"),
-            ("date_of_visit", "date"), ("doctor_in_charge", "text"),
-            ("treatment_type", ("list", treatment_types)),
-            ("care_services", ("list", care_services)),
-            ("frequency", "text"), ("dose", "text"),
-            ("product", ("list", products)), ("merk", "text"),
+        "RS Penangan": [
+            ("patient_id", "int"), ("Nama Lengkap", "text"),
+            ("Nama RS", "text"), ("Kota RS", "text"), ("Provinsi RS", "text"),
+            ("Tanggal Kunjungan", "date"), ("DPJP", "text"),
+            ("Jenis Penanganan", ("list", treatment_types)),
+            ("Layanan Rawat", ("list", care_services)),
+            ("Frekuensi", "text"), ("Dosis", "text"),
+            ("Produk", ("list", products)), ("Merk", "text"),
         ],
-        "kematian": [
-            ("patient_id", "int"), ("full_name", "text"),
-            ("cause_of_death", "text"), ("year_of_death", "int"),
+        "Kematian": [
+            ("patient_id", "int"), ("Nama Lengkap", "text"),
+            ("Penyebab Kematian", "text"), ("Tahun Kematian", "int"),
         ],
-        "contacts": [
-            ("patient_id", "int"), ("full_name", "text"),
-            ("relation", ("list", relations)), ("name", "text"),
-            ("phone", "text"), ("is_primary", ("list", ["TRUE","FALSE"])),
+        "Kontak": [
+            ("patient_id", "int"), ("Nama Lengkap", "text"),
+            ("Relasi", ("list", relations)), ("Nama Kontak", "text"),
+            ("No. Telp", "text"), ("Primary", ("list", ["TRUE","FALSE"])),
         ],
     }
+    # --- END PERUBAHAN ---
 
     import io
     from pandas import ExcelWriter
@@ -225,7 +230,7 @@ def build_bulk_template_bytes() -> bytes:
         fmt_h = wb.add_format({"bold": True, "font_size": 14})
 
         ws_readme = wb.add_worksheet("README")
-        readme = [("Template Bulk Insert PWH", fmt_h),("Cara pakai:", None),("1) Isi setiap sheet sesuai kolom.", None),("2) Gunakan format tanggal yyyy-mm-dd.", None),("3) Kolom dropdown sudah dibatasi ke pilihan valid.", None),("4) Jika mengisi pasien baru, sheet lain boleh pakai kolom full_name untuk mapping.", None),("5) Jika sudah tahu patient_id, isi langsung untuk akurasi.", None),("6) is_primary (contacts) gunakan TRUE/FALSE.", None)]
+        readme = [("Template Bulk Insert PWH", fmt_h),("Cara pakai:", None),("1) Isi setiap sheet sesuai kolom.", None),("2) Gunakan format tanggal yyyy-mm-dd.", None),("3) Kolom dropdown sudah dibatasi ke pilihan valid.", None),("4) Jika mengisi pasien baru, sheet lain boleh pakai kolom 'Nama Lengkap' untuk mapping.", None),("5) Jika sudah tahu patient_id, isi langsung untuk akurasi.", None),("6) 'Primary' (Kontak) gunakan TRUE/FALSE.", None)]
         for r, (txt2, sty) in enumerate(readme): ws_readme.write(r, 0, txt2, sty)
 
         ws_lk = wb.add_worksheet("lookups")
@@ -239,10 +244,10 @@ def build_bulk_template_bytes() -> bytes:
 
         max_rows = 1000
         for sheet, cols in template_sheets.items():
-            ws = wb.add_worksheet(sheet)
+            ws = wb.add_worksheet(sheet) # <-- 'sheet' sekarang "Pasien", "Diagnosa", dst.
             ws.freeze_panes(1, 0)
             for idx, (col_name, col_type) in enumerate(cols):
-                ws.write(0, idx, col_name, fmt_header)
+                ws.write(0, idx, col_name, fmt_header) # <-- 'col_name' sekarang "Nama Lengkap", dst.
                 ws.set_column(idx, idx, max(15, len(col_name) + 2))
                 if isinstance(col_type, tuple) and col_type[0] == "list":
                     named = col_type[1]
@@ -460,8 +465,8 @@ def update_virus_test(id: int, payload: dict):
 
 def insert_treatment_hospital(payload: dict):
     sql = """
-        INSERT INTO pwh.treatment_hospital 
-        (patient_id, name_hospital, city_hospital, province_hospital, date_of_visit, doctor_in_charge, treatment_type, care_services, frequency, dose, product, merk) 
+        INSERT INTO pwh.treatment_hospital
+        (patient_id, name_hospital, city_hospital, province_hospital, date_of_visit, doctor_in_charge, treatment_type, care_services, frequency, dose, product, merk)
         VALUES (:patient_id, :name_hospital, :city_hospital, :province_hospital, :date_of_visit, :doctor_in_charge, :treatment_type, :care_services, :frequency, :dose, :product, :merk);
     """
     run_exec(sql, payload)
@@ -469,10 +474,10 @@ def insert_treatment_hospital(payload: dict):
 def update_treatment_hospital(id: int, payload: dict):
     payload['id'] = id
     sql = """
-        UPDATE pwh.treatment_hospital SET 
-        name_hospital=:name_hospital, city_hospital=:city_hospital, province_hospital=:province_hospital, 
+        UPDATE pwh.treatment_hospital SET
+        name_hospital=:name_hospital, city_hospital=:city_hospital, province_hospital=:province_hospital,
         date_of_visit=:date_of_visit, doctor_in_charge=:doctor_in_charge,
-        treatment_type=:treatment_type, care_services=:care_services, frequency=:frequency, dose=:dose, product=:product, merk=:merk 
+        treatment_type=:treatment_type, care_services=:care_services, frequency=:frequency, dose=:dose, product=:product, merk=:merk
         WHERE id=:id;
     """
     run_exec(sql, payload)
@@ -519,19 +524,59 @@ def import_bulk_excel(file) -> dict:
     xl = pd.ExcelFile(file)
     sheets = {name.lower(): name for name in xl.sheet_names}
 
-    def df_or_empty(key, cols):
+    # --- PERUBAHAN: Modifikasi df_or_empty untuk menerima rename_map ---
+    def df_or_empty(key, cols, rename_map=None):
         if key in sheets:
             df = xl.parse(sheets[key])
             df.columns = [c.strip() for c in df.columns]
+            if rename_map:
+                df = df.rename(columns=rename_map) # Rename dari B. Indo -> B. Inggris (internal)
             for c in cols:
                 if c not in df.columns: df[c] = None
             return df.fillna(value=None).dropna(how="all")
         return pd.DataFrame(columns=cols)
 
-    pat_cols = ["full_name","birth_place","birth_date","nik","blood_group","rhesus","gender","occupation", "education", "address","phone","province","city","note", "village", "district"]
-    df_pat = df_or_empty("patients", pat_cols)
+    # --- PERUBAHAN: Definisikan Peta Pembalikan (Header B. Indo -> Nama Internal) ---
+    MAP_PAT = {
+        "Nama Lengkap": "full_name", "Tempat Lahir": "birth_place", "Tanggal Lahir": "birth_date", "NIK": "nik",
+        "Gol. Darah": "blood_group", "Rhesus": "rhesus", "Jenis Kelamin": "gender", "Pekerjaan": "occupation",
+        "Pendidikan Terakhir": "education", "Alamat": "address", "No. Ponsel": "phone", "Propinsi": "province",
+        "Kabupaten/Kota": "city", "Kecamatan": "district", "Kelurahan/Desa": "village", "Catatan": "note"
+    }
+    MAP_DIAG = {
+        "Nama Lengkap": "full_name", "Jenis Hemofilia": "hemo_type", "Kategori": "severity",
+        "Tgl Diagnosis": "diagnosed_on", "Sumber": "source", "patient_id": "patient_id"
+    }
+    MAP_INH = {
+        "Nama Lengkap": "full_name", "Faktor": "factor", "Titer (BU)": "titer_bu",
+        "Tgl Ukur": "measured_on", "Lab": "lab", "patient_id": "patient_id"
+    }
+    MAP_VIRUS = {
+        "Nama Lengkap": "full_name", "Jenis Tes": "test_type", "Hasil": "result",
+        "Tgl Tes": "tested_on", "Lab": "lab", "patient_id": "patient_id"
+    }
+    MAP_HOSP = {
+        "Nama Lengkap": "full_name", "Nama RS": "name_hospital", "Kota RS": "city_hospital", "Provinsi RS": "province_hospital",
+        "Tanggal Kunjungan": "date_of_visit", "DPJP": "doctor_in_charge", "Jenis Penanganan": "treatment_type",
+        "Layanan Rawat": "care_services", "Frekuensi": "frequency", "Dosis": "dose", "Produk": "product",
+        "Merk": "merk", "patient_id": "patient_id"
+    }
+    MAP_DEATH = {
+        "Nama Lengkap": "full_name", "Penyebab Kematian": "cause_of_death", "Tahun Kematian": "year_of_death",
+        "patient_id": "patient_id"
+    }
+    MAP_CONTACT = {
+        "Nama Lengkap": "full_name", "Relasi": "relation", "Nama Kontak": "name", "No. Telp": "phone",
+        "Primary": "is_primary", "patient_id": "patient_id"
+    }
+    # --- END PERUBAHAN ---
+
+    # Gunakan nama internal (B. Inggris) untuk pat_cols
+    pat_cols_internal = ["full_name","birth_place","birth_date","nik","blood_group","rhesus","gender","occupation", "education", "address","phone","province","city","note", "village", "district"]
+    # Baca sheet "pasien" (lowercase dari "Pasien") dan terapkan map
+    df_pat = df_or_empty("pasien", pat_cols_internal, MAP_PAT)
     inserted_patients = []
-    
+
     for _, r in df_pat[df_pat["full_name"].notna()].iterrows():
         payload = {
             "full_name": _safe_str(r.get("full_name")), "birth_place": _safe_str(r.get("birth_place")),
@@ -539,8 +584,8 @@ def import_bulk_excel(file) -> dict:
             "blood_group": _safe_str(r.get("blood_group")),
             "rhesus": _safe_str(r.get("rhesus")), "gender": _safe_str(r.get("gender")),
             "occupation": _safe_str(r.get("occupation")), "education": _safe_str(r.get("education")),
-            "address": _safe_str(r.get("address")), 
-            "phone": _safe_str(r.get("phone")), "province": _safe_str(r.get("province")), 
+            "address": _safe_str(r.get("address")),
+            "phone": _safe_str(r.get("phone")), "province": _safe_str(r.get("province")),
             "city": _safe_str(r.get("city")), "note": _safe_str(r.get("note")),
             "village": _safe_str(r.get("village")), "district": _safe_str(r.get("district"))
         }
@@ -556,35 +601,53 @@ def import_bulk_excel(file) -> dict:
         if pd.notna(pid) and str(pid).strip():
             try: return int(pid)
             except Exception: pass
-        nm = _safe_str(row.get("full_name")).lower()
+        nm = _safe_str(row.get("full_name")).lower() # 'full_name' sudah di-rename dari 'Nama Lengkap'
         if nm: return map_new.get(nm) or map_db.get(nm)
         return None
 
-    results = {"patients": len(inserted_patients)}
+    # --- PERUBAHAN: Gunakan nama B. Indo di hasil dan konfigurasi ---
+    results = {"Pasien": len(inserted_patients)}
     sheet_configs = {
-        "diagnoses": ("diagnoses", ["patient_id","full_name","hemo_type","severity","diagnosed_on","source"], lambda r, pid: insert_diagnosis(pid, _safe_str(r.get("hemo_type")), _safe_str(r.get("severity")), _to_date(r.get("diagnosed_on")), _safe_str(r.get("source")))),
-        "inhibitors": ("inhibitors", ["patient_id","full_name","factor","titer_bu","measured_on","lab"], lambda r, pid: insert_inhibitor(pid, _safe_str(r.get("factor")), pd.to_numeric(r.get("titer_bu"), errors='coerce'), _to_date(r.get("measured_on")), _safe_str(r.get("lab")))),
-        "virus_tests": ("virus_tests", ["patient_id","full_name","test_type","result","tested_on","lab"], lambda r, pid: insert_virus_test(pid, _safe_str(r.get("test_type")), _safe_str(r.get("result")), _to_date(r.get("tested_on")), _safe_str(r.get("lab")))),
-        "treatment_hospitals": ("treatment_hospitals", ["patient_id", "full_name", "name_hospital", "city_hospital", "province_hospital", "date_of_visit", "doctor_in_charge", "treatment_type", "care_services", "frequency", "dose", "product", "merk"],
-            lambda r, pid: insert_treatment_hospital({
-                "patient_id": pid, "name_hospital": _safe_str(r.get("name_hospital")), "city_hospital": _safe_str(r.get("city_hospital")), "province_hospital": _safe_str(r.get("province_hospital")),
-                "date_of_visit": _to_date(r.get("date_of_visit")), "doctor_in_charge": _safe_str(r.get("doctor_in_charge")),
-                "treatment_type": _safe_str(r.get("treatment_type")), "care_services": _safe_str(r.get("care_services")), "frequency": _safe_str(r.get("frequency")), "dose": _safe_str(r.get("dose")),
-                "product": _safe_str(r.get("product")), "merk": _safe_str(r.get("merk"))
-            })
-        ),
-        "kematian": ("kematian", ["patient_id", "full_name", "cause_of_death", "year_of_death"],
-                     lambda r, pid: insert_death_record({
-                         "patient_id": pid,
-                         "cause_of_death": _safe_str(r.get("cause_of_death")),
-                         "year_of_death": pd.to_numeric(r.get("year_of_death"), errors='coerce')
-                     })
-        ),
-        "contacts": ("contacts", ["patient_id","full_name","relation","name","phone","is_primary"], lambda r, pid: insert_contact(pid, _safe_str(r.get("relation")), _safe_str(r.get("name")), _safe_str(r.get("phone")), _to_bool(r.get("is_primary")))),
+        "Diagnosa": ("diagnosa", # nama sheet lowercase
+                      ["patient_id","full_name","hemo_type","severity","diagnosed_on","source"], # nama kolom internal
+                      MAP_DIAG, # Peta pembalikan
+                      lambda r, pid: insert_diagnosis(pid, _safe_str(r.get("hemo_type")), _safe_str(r.get("severity")), _to_date(r.get("diagnosed_on")), _safe_str(r.get("source")))),
+        "Inhibitor": ("inhibitor",
+                       ["patient_id","full_name","factor","titer_bu","measured_on","lab"],
+                       MAP_INH,
+                       lambda r, pid: insert_inhibitor(pid, _safe_str(r.get("factor")), pd.to_numeric(r.get("titer_bu"), errors='coerce'), _to_date(r.get("measured_on")), _safe_str(r.get("lab")))),
+        "Virus Tes": ("virus tes",
+                       ["patient_id","full_name","test_type","result","tested_on","lab"],
+                       MAP_VIRUS,
+                       lambda r, pid: insert_virus_test(pid, _safe_str(r.get("test_type")), _safe_str(r.get("result")), _to_date(r.get("tested_on")), _safe_str(r.get("lab")))),
+        "RS Penangan": ("rs penangan",
+                         ["patient_id", "full_name", "name_hospital", "city_hospital", "province_hospital", "date_of_visit", "doctor_in_charge", "treatment_type", "care_services", "frequency", "dose", "product", "merk"],
+                         MAP_HOSP,
+                         lambda r, pid: insert_treatment_hospital({
+                             "patient_id": pid, "name_hospital": _safe_str(r.get("name_hospital")), "city_hospital": _safe_str(r.get("city_hospital")), "province_hospital": _safe_str(r.get("province_hospital")),
+                             "date_of_visit": _to_date(r.get("date_of_visit")), "doctor_in_charge": _safe_str(r.get("doctor_in_charge")),
+                             "treatment_type": _safe_str(r.get("treatment_type")), "care_services": _safe_str(r.get("care_services")), "frequency": _safe_str(r.get("frequency")), "dose": _safe_str(r.get("dose")),
+                             "product": _safe_str(r.get("product")), "merk": _safe_str(r.get("merk"))
+                         })
+                        ),
+        "Kematian": ("kematian",
+                      ["patient_id", "full_name", "cause_of_death", "year_of_death"],
+                      MAP_DEATH,
+                      lambda r, pid: insert_death_record({
+                          "patient_id": pid,
+                          "cause_of_death": _safe_str(r.get("cause_of_death")),
+                          "year_of_death": pd.to_numeric(r.get("year_of_death"), errors='coerce')
+                      })
+                     ),
+        "Kontak": ("kontak",
+                      ["patient_id","full_name","relation","name","phone","is_primary"],
+                      MAP_CONTACT,
+                      lambda r, pid: insert_contact(pid, _safe_str(r.get("relation")), _safe_str(r.get("name")), _safe_str(r.get("phone")), _to_bool(r.get("is_primary")))),
     }
+    # --- END PERUBAHAN ---
 
-    for key, (sheet_name, cols, insert_func) in sheet_configs.items():
-        df_sheet = df_or_empty(sheet_name, cols)
+    for key, (sheet_name_lowercase, internal_cols, reverse_map, insert_func) in sheet_configs.items():
+        df_sheet = df_or_empty(sheet_name_lowercase, internal_cols, reverse_map)
         count = 0
         for _, r in df_sheet.iterrows():
             pid = _resolve_pid(r)
@@ -592,8 +655,11 @@ def import_bulk_excel(file) -> dict:
                 try:
                     insert_func(r, pid)
                     count += 1
-                except Exception: pass
-        results[key] = count
+                except Exception as e:
+                    # Optional: Log the error for debugging
+                    # st.warning(f"Gagal impor baris di sheet {key} untuk PID {pid}: {e}")
+                    pass
+        results[key] = count # 'key' sekarang "Diagnosa", "Inhibitor", dst.
 
     return results
 
@@ -646,15 +712,15 @@ def set_editing_state(state_key, data_id, table_name):
 # TABS (Form Input)
 # ------------------------------------------------------------------------------
 tab_pat, tab_diag, tab_inh, tab_virus, tab_hospital, tab_death, tab_contacts, tab_view, tab_export = st.tabs(
-    ["🧑‍⚕️ Pasien", "🧬 Diagnosis", "🧪 Inhibitor", "🧫 Virus Tests", "🏥 Rumah Sakit Penangan", "⚰️ Kematian", "👨‍👩‍👧 Contacts", "📄 Ringkasan", "⬇️ Export"]
+    ["🧑‍⚕️ Pasien", "🧬 Diagnosis", "🧪 Inhibitor", "🧫 Virus Tests", "🏥 Rumah Sakit Penangan", "⚰️ Kematian", "👨‍👩‍👧 Kontak", "📄 Ringkasan", "⬇️ Export"]
 )
 
 # Patient
 with tab_pat:
     st.subheader("🧑‍⚕️ Tambah Data Pasien")
-    
+
     pat_data = st.session_state.get('patient_to_edit', {})
-    
+
     if pat_data:
         st.info(f"Mode Edit untuk Pasien: {pat_data.get('full_name')} (ID: {pat_data.get('id')})")
         if st.button("❌ Batal Edit", key="cancel_pat_edit"):
@@ -664,14 +730,14 @@ with tab_pat:
 
     df_wilayah_all = fetch_all_wilayah_details()
     occupations_list = fetch_occupations_list()
-    
+
     # ================== PERUBAHAN UTAMA DI SINI ==================
     # Menggunakan st.container(border=True) sebagai pengganti st.form
     # untuk menjaga tampilan tetap rapi sambil memungkinkan autoload.
-    
+
     with st.container(border=True):
         full_name = st.text_input("Nama Lengkap*", value=pat_data.get('full_name', ''))
-        
+
         c1, c2, c3 = st.columns(3)
         with c1: birth_place = st.text_input("Tempat Lahir", value=pat_data.get('birth_place', ''))
         with c2:
@@ -679,7 +745,7 @@ with tab_pat:
             birth_date = st.date_input("Tanggal Lahir", value=birth_date_val, format="YYYY-MM-DD", min_value=date(1920, 1, 1), max_value=date.today())
         with c3:
             nik = st.text_input("NIK*", value=pat_data.get('nik', ''), max_chars=16)
-        
+
         c_pekerjaan, c_pendidikan = st.columns(2)
         with c_pekerjaan:
             occupation_idx = get_safe_index(occupations_list, pat_data.get('occupation'))
@@ -687,12 +753,12 @@ with tab_pat:
         with c_pendidikan:
             education_idx = get_safe_index(EDUCATION_LEVELS, pat_data.get('education'))
             education = st.selectbox("Pendidikan Terakhir", EDUCATION_LEVELS, index=education_idx)
-        
+
         c5, c6, c7, c8 = st.columns(4)
-        with c5: 
+        with c5:
             blood_group_idx = get_safe_index(BLOOD_GROUPS, pat_data.get('blood_group'))
             blood_group = st.selectbox("Golongan Darah", BLOOD_GROUPS, index=blood_group_idx)
-        with c6: 
+        with c6:
             rhesus_idx = get_safe_index(RHESUS, pat_data.get('rhesus'))
             rhesus = st.selectbox("Rhesus", RHESUS, index=rhesus_idx)
         with c7:
@@ -700,15 +766,15 @@ with tab_pat:
             gender = st.selectbox("Jenis Kelamin", GENDERS, index=gender_idx)
         with c8:
             phone = st.text_input("No. Ponsel", max_chars=50, value=pat_data.get('phone', ''))
-            
+
         address = st.text_area("Alamat", value=pat_data.get('address', ''))
 
         # --- START: Logika Wilayah Autofill ---
-        
+
         # 1. Siapkan list dan nilai default
         village_list = [""] + df_wilayah_all['full_display'].tolist()
         village_name, district_name, city_name, province_name = "", "", "", ""
-        
+
         # 2. Cek data yang ada (jika mode edit)
         village_display_val = ""
         if pat_data:
@@ -716,11 +782,11 @@ with tab_pat:
             d = pat_data.get('district')
             c = pat_data.get('city')
             p = pat_data.get('province')
-            
+
             # Rekonstruksi string 'full_display' jika semua datanya ada
             if v and d and c and p:
                 village_display_val = f"{v} - {d} - {c} - {p}"
-            
+
             # Fallback jika data tidak lengkap (misal data lama)
             if not village_display_val:
                 village_name = v or ""
@@ -729,14 +795,14 @@ with tab_pat:
                 province_name = p or ""
 
         village_idx = get_safe_index(village_list, village_display_val)
-        
+
         # 3. Buat Selectbox untuk Kelurahan
         selected_village_display = st.selectbox(
             "Kelurahan/Desa (pilih ini untuk mengisi otomatis Kecamatan, Kota, dan Propinsi)",
             village_list,
             index=village_idx
         )
-        
+
         # 4. Logika Autoload
         if selected_village_display:
             match = df_wilayah_all[df_wilayah_all['full_display'] == selected_village_display]
@@ -752,15 +818,15 @@ with tab_pat:
             st.text_input("Kecamatan (otomatis)", value=district_name, disabled=True)
         with col_city:
             st.text_input("Kabupaten/Kota (otomatis)", value=city_name, disabled=True)
-        
+
         col_prov, _ = st.columns(2) # Gunakan 2 kolom agar layout konsisten
         with col_prov:
             st.text_input("Propinsi (otomatis)", value=province_name, disabled=True)
-            
+
         # --- END: Logika Wilayah Autofill ---
 
         note = st.text_area("Catatan (opsional)", value=pat_data.get('note', ''))
-        
+
         # Menggunakan st.button biasa sebagai pengganti st.form_submit_button
         form_label = "💾 Perbarui Pasien" if pat_data else "💾 Simpan Pasien Baru"
         submitted = st.button(form_label, type="primary")
@@ -778,7 +844,7 @@ with tab_pat:
                 "gender": gender or None,
                 "occupation": occupation or None, "education": education or None,
                 "address": (address or "").strip() or None,
-                "phone": (phone or "").strip() or None, 
+                "phone": (phone or "").strip() or None,
                 # -- Data dari Autofill --
                 "province": (province_name or "").strip() or None,
                 "city": (city_name or "").strip() or None,
@@ -800,6 +866,7 @@ with tab_pat:
                 else:
                     update_patient(pat_data['id'], payload)
                     st.success(f"Pasien dengan ID {pat_data['id']} berhasil diperbarui.")
+                    fetch_all_wilayah_details.clear() # Clear cache wilayah jika data pasien berubah
                     get_all_patients_for_selection.clear()
                     clear_session_state('patient_to_edit')
                     clear_session_state('patient_matches')
@@ -817,6 +884,7 @@ with tab_pat:
                 else:
                     pid = insert_patient(payload)
                     st.success(f"Pasien baru berhasil disimpan dengan ID: {pid}")
+                    fetch_all_wilayah_details.clear() # Clear cache wilayah
                     get_all_patients_for_selection.clear()
                     st.rerun()
 
@@ -826,7 +894,7 @@ with tab_pat:
     st.write("**Edit Data Pasien**")
     search_name_pat = st.text_input("Ketik nama pasien untuk diedit", key="search_name_pat")
     if st.button("Cari Pasien", key="search_pat_button"):
-        clear_session_state('patient_to_edit') 
+        clear_session_state('patient_to_edit')
         if search_name_pat:
             results_df = run_df("SELECT id, full_name, birth_date FROM pwh.patients WHERE full_name ILIKE :name", {"name": f"%{search_name_pat}%"})
             if results_df.empty:
@@ -846,7 +914,7 @@ with tab_pat:
     if 'patient_matches' in st.session_state and not st.session_state.patient_matches.empty:
         df_matches = st.session_state.patient_matches
         options = {f"ID: {row['id']} - {row['full_name']} (Lahir: {row['birth_date']})": row['id'] for index, row in df_matches.iterrows()}
-        
+
         selected_option = st.selectbox("Pilih pasien yang benar:", options.keys())
         if st.button("Pilih Pasien Ini", key="select_patient_button"):
             selected_id = options[selected_option]
@@ -880,18 +948,23 @@ ORDER BY p.id DESC
 LIMIT 200;
 
 """)
-    
+
     if not dfp.empty:
         dfp_display = dfp.copy()
         dfp_display['birth_place'] = dfp_display['birth_place'].apply(lambda x: '*****' if pd.notna(x) and str(x).strip() else x)
         dfp_display['birth_date'] = dfp_display['birth_date'].apply(lambda x: '*****' if pd.notna(x) else x)
         dfp_display['nik'] = dfp_display['nik'].apply(lambda x: '*****' if pd.notna(x) and str(x).strip() else x)
         dfp_display['phone'] = dfp_display['phone'].apply(lambda x: '*****' if pd.notna(x) and str(x).strip() else x)
-        
+        # Sembunyikan data alamat lengkap di tampilan tabel utama
+        dfp_display['address'] = dfp_display['address'].apply(lambda x: '*****' if pd.notna(x) and str(x).strip() else x)
+        dfp_display['village'] = dfp_display['village'].apply(lambda x: '*****' if pd.notna(x) and str(x).strip() else x)
+        dfp_display['district'] = dfp_display['district'].apply(lambda x: '*****' if pd.notna(x) and str(x).strip() else x)
+
+
         dfp_display = dfp_display.drop(columns=['id'], errors='ignore')
         dfp_display.index = range(1, len(dfp_display) + 1)
         dfp_display.index.name = "No."
-        
+
         st.write(f"Total Data Pasien: **{len(dfp_display)}**")
         st.dataframe(_alias_df(dfp_display, ALIAS_PATIENTS), use_container_width=True)
     else:
@@ -920,7 +993,7 @@ with tab_diag:
     st.subheader("🧬 Tambah Data Diagnosis Pasien")
 
     diag_data = st.session_state.get('diag_to_edit', {})
-    
+
     if diag_data:
         st.info(f"Mode Edit untuk Diagnosis ID: {diag_data.get('id')}")
         if st.button("❌ Batal Edit", key="cancel_diag_edit"):
@@ -930,7 +1003,7 @@ with tab_diag:
 
     # Tentukan pilihan default jika dalam mode edit
     default_patient_id = diag_data.get('patient_id') if diag_data else None
-    
+
     pid_diag = st.selectbox(
         "Pilih Pasien (untuk data baru)",
         options=patient_id_options,
@@ -948,7 +1021,7 @@ with tab_diag:
         diagnosed_on_val = pd.to_datetime(diag_data.get('diagnosed_on')).date() if pd.notna(diag_data.get('diagnosed_on')) else None
         diagnosed_on = st.date_input("Tanggal Diagnosis", value=diagnosed_on_val, format="YYYY-MM-DD")
         source = st.text_input("Sumber (opsional)", value=diag_data.get('source', ''))
-        
+
         sdiag_label = "Perbarui Diagnosis" if diag_data else "Simpan Diagnosis Baru"
         sdiag = st.form_submit_button(f"💾 {sdiag_label}", type="primary")
 
@@ -1008,14 +1081,14 @@ with tab_diag:
             set_editing_state('diag_to_edit', selected_id, 'pwh.hemo_diagnoses')
             clear_session_state('diag_matches')
             st.rerun()
-    
+
     query_diag = "SELECT d.id, d.patient_id, p.full_name, d.hemo_type, d.severity, d.diagnosed_on, d.source FROM pwh.hemo_diagnoses d JOIN pwh.patients p ON p.id = d.patient_id"
     params = {}
     if 'diag_selected_patient_name' in st.session_state and st.session_state.diag_selected_patient_name:
         query_diag += " WHERE p.full_name ILIKE :name"
         params['name'] = f"%{st.session_state.diag_selected_patient_name}%"
     query_diag += " ORDER BY d.id DESC LIMIT 300;"
-    
+
     df_diag = run_df(query_diag, params)
 
     if not df_diag.empty:
@@ -1040,7 +1113,7 @@ with tab_inh:
             st.rerun()
 
     default_patient_id_inh = inh_data.get('patient_id') if inh_data else None
-    
+
     pid_inh = st.selectbox(
         "Pilih Pasien (untuk data baru)",
         options=patient_id_options,
@@ -1076,7 +1149,7 @@ with tab_inh:
 
     st.markdown("---")
     st.markdown("### 📋 Data Inhibitor Terbaru")
-    
+
     st.write("**Edit Data Inhibitor**")
     search_name_inh = st.text_input("Ketik nama pasien untuk mencari riwayat dan mengedit", key="search_name_inh")
     if st.button("Cari Riwayat Inhibitor", key="search_inh_button"):
@@ -1138,7 +1211,7 @@ with tab_inh:
 # Virus Tests
 with tab_virus:
     st.subheader("🧫 Tambah Data Virus Tests")
-        
+
     virus_data = st.session_state.get('virus_to_edit', {})
     if virus_data:
         st.info(f"Mode Edit untuk Tes Virus ID: {virus_data.get('id')}")
@@ -1148,7 +1221,7 @@ with tab_virus:
             st.rerun()
 
     default_patient_id_virus = virus_data.get('patient_id') if virus_data else None
-    
+
     pid_virus = st.selectbox(
         "Pilih Pasien (untuk data baru)",
         options=patient_id_options,
@@ -1185,7 +1258,7 @@ with tab_virus:
 
     st.markdown("---")
     st.markdown("### 📋 Data Tes Virus Terbaru")
-    
+
     st.write("**Edit Data Tes Virus**")
     search_name_virus = st.text_input("Ketik nama pasien untuk mencari riwayat dan mengedit", key="search_name_virus")
     if st.button("Cari Riwayat Tes Virus", key="search_virus_button"):
@@ -1233,13 +1306,13 @@ with tab_virus:
         query_virus += " WHERE p.full_name ILIKE :name"
         params_virus['name'] = f"%{st.session_state.virus_selected_patient_name}%"
     query_virus += " ORDER BY v.id DESC LIMIT 500;"
-    
+
     df_virus = run_df(query_virus, params_virus)
 
     if not df_virus.empty:
         df_virus_display = df_virus.copy()
         df_virus_display['result'] = '*****'
-        
+
         df_virus_display = df_virus_display.drop(columns=['id', 'patient_id'], errors='ignore')
         df_virus_display.index = range(1, len(df_virus_display) + 1)
         df_virus_display.index.name = "No."
@@ -1252,7 +1325,7 @@ with tab_virus:
 # Rumah Sakit Penangan
 with tab_hospital:
     st.subheader("🏥 Tambah Data Rumah Sakit Penangan")
-        
+
     hosp_data = st.session_state.get('hosp_to_edit', {})
     if hosp_data:
         st.info(f"Mode Edit untuk Data RS ID: {hosp_data.get('id')}")
@@ -1260,9 +1333,9 @@ with tab_hospital:
             clear_session_state('hosp_to_edit')
             clear_session_state('hosp_matches')
             st.rerun()
-            
+
     default_patient_id_hosp = hosp_data.get('patient_id') if hosp_data else None
-    
+
     pid_hosp = st.selectbox(
         "Pilih Pasien (untuk data baru)",
         options=patient_id_options,
@@ -1271,14 +1344,14 @@ with tab_hospital:
         key="hosp_patient_selector",
         disabled=bool(hosp_data)
     )
-    
+
     with st.form("hospital::form", clear_on_submit=False):
         hospital_list = fetch_hospitals()
         name_h, city_h, prov_h = hosp_data.get('name_hospital'), hosp_data.get('city_hospital'), hosp_data.get('province_hospital')
         hosp_val = f"{name_h} - {city_h} - {prov_h}" if all([name_h, city_h, prov_h]) else ''
         hosp_idx = get_safe_index(hospital_list, hosp_val)
         hospital_selection = st.selectbox("Nama Rumah Sakit*", hospital_list, index=hosp_idx)
-        
+
         col_date, col_doc = st.columns(2)
         with col_date:
             visit_date_val = pd.to_datetime(hosp_data.get('date_of_visit')).date() if pd.notna(hosp_data.get('date_of_visit')) else None
@@ -1297,7 +1370,7 @@ with tab_hospital:
         with col3: frequency = st.text_input("Frekuensi", placeholder="Contoh: 1x Seminggu", value=hosp_data.get('frequency', ''))
         with col4: dose = st.text_input("Dosis", placeholder="Contoh: 1000 IU", value=hosp_data.get('dose', ''))
         prod_idx = get_safe_index(PRODUCTS, hosp_data.get('product'))
-        product = st.selectbox("Product", PRODUCTS, index=prod_idx)
+        product = st.selectbox("Produk", PRODUCTS, index=prod_idx) # Diubah ke 'Produk'
         merk = st.text_input("Merk", value=hosp_data.get('merk', ''))
         shosp_label = "Perbarui Data" if hosp_data else "Simpan Data Baru"
         shosp = st.form_submit_button(f"💾 {shosp_label}", type="primary")
@@ -1307,12 +1380,12 @@ with tab_hospital:
         else:
             parts = hospital_selection.split(' - ')
             name_h, city_h, prov_h = (parts[0].strip(), parts[1].strip(), parts[2].strip()) if len(parts) == 3 else (hospital_selection, None, None)
-            payload = { 
-                "name_hospital": name_h, "city_hospital": city_h, "province_hospital": prov_h, 
+            payload = {
+                "name_hospital": name_h, "city_hospital": city_h, "province_hospital": prov_h,
                 "date_of_visit": date_of_visit, "doctor_in_charge": (doctor_in_charge or "").strip() or None,
-                "treatment_type": treatment_type or None, "care_services": care_services or None, 
-                "frequency": (frequency or "").strip() or None, "dose": (dose or "").strip() or None, 
-                "product": product or None, "merk": (merk or "").strip() or None, 
+                "treatment_type": treatment_type or None, "care_services": care_services or None,
+                "frequency": (frequency or "").strip() or None, "dose": (dose or "").strip() or None,
+                "product": product or None, "merk": (merk or "").strip() or None,
             }
             if hosp_data:
                 update_treatment_hospital(hosp_data['id'], payload)
@@ -1326,10 +1399,10 @@ with tab_hospital:
                 st.rerun()
             else:
                 if not hosp_data: st.warning("Silakan pilih pasien terlebih dahulu.")
-            
+
     st.markdown("---")
     st.markdown("### 📋 Data Penanganan RS Terbaru")
-    
+
     st.write("**Edit Data Penanganan RS**")
     search_name_hosp = st.text_input("Ketik nama pasien untuk mencari riwayat dan mengedit", key="search_name_hosp")
     if st.button("Cari Riwayat Penanganan", key="search_hosp_button"):
@@ -1379,7 +1452,7 @@ with tab_hospital:
     query_hosp += " ORDER BY th.id DESC LIMIT 300;"
 
     df_th = run_df(query_hosp, params_hosp)
-        
+
     if not df_th.empty:
         df_th_display = df_th.drop(columns=['id', 'patient_id'], errors='ignore')
         df_th_display.index = range(1, len(df_th_display) + 1)
@@ -1399,7 +1472,7 @@ with tab_death:
         if st.button("❌ Batal Edit", key="cancel_death_edit"):
             clear_session_state('death_to_edit')
             st.rerun()
-    
+
     default_patient_id_death = death_data.get('patient_id') if death_data else None
 
     pid_death = st.selectbox(
@@ -1419,7 +1492,7 @@ with tab_death:
             year_of_death_val = int(year_of_death_val)
 
         year_of_death = st.number_input("Tahun Kematian", min_value=1900, max_value=current_year, value=year_of_death_val, step=1)
-        
+
         sdeath_label = "Perbarui Data Kematian" if death_data else "Simpan Data Kematian"
         sdeath = st.form_submit_button(f"💾 {sdeath_label}", type="primary")
 
@@ -1469,7 +1542,7 @@ with tab_death:
         query_death += " WHERE p.full_name ILIKE :name"
         params_death['name'] = f"%{st.session_state.death_selected_patient_name}%"
     query_death += " ORDER BY d.id DESC;"
-    
+
     df_death = run_df(query_death, params_death)
 
     if not df_death.empty:
@@ -1482,7 +1555,7 @@ with tab_death:
         st.info("Tidak ada data kematian untuk ditampilkan.")
 
 
-# Contacts
+# Kontak
 with tab_contacts:
     st.subheader("👨‍👩‍👧 Tambah Data Kontak")
 
@@ -1493,9 +1566,9 @@ with tab_contacts:
             clear_session_state('contact_to_edit')
             clear_session_state('contact_matches')
             st.rerun()
-    
+
     default_patient_id_cont = cont_data.get('patient_id') if cont_data else None
-    
+
     pid_cont = st.selectbox(
         "Pilih Pasien (untuk data baru)",
         options=patient_id_options,
@@ -1504,7 +1577,7 @@ with tab_contacts:
         key="cont_patient_selector",
         disabled=bool(cont_data)
     )
-    
+
     with st.form("contact::form", clear_on_submit=False):
         relation_idx = get_safe_index(RELATIONS, cont_data.get('relation'))
         relation = st.selectbox("Relasi", RELATIONS, index=relation_idx)
@@ -1535,7 +1608,7 @@ with tab_contacts:
 
     st.markdown("---")
     st.markdown("### 📋 Data Kontak Terbaru")
-    
+
     st.write("**Edit Data Kontak**")
     search_name_cont = st.text_input("Ketik nama pasien untuk mencari riwayat dan mengedit", key="search_name_cont")
     if st.button("Cari Kontak", key="search_cont_button"):
@@ -1594,16 +1667,19 @@ with tab_contacts:
     else:
         st.info("Tidak ada data kontak untuk ditampilkan.")
 
-# Summary View
+# Ringkasan
 with tab_view:
-    st.subheader("📄 Ringkasan `pwh.patient_summary`")
+    st.subheader("📄 Ringkasan Pasien") # Diubah ke 'Ringkasan Pasien'
     df = run_df("SELECT * FROM pwh.patient_summary ORDER BY id DESC LIMIT 300;")
     if df.empty:
         st.info("Belum ada data.")
     else:
         df_summary_display = df.copy()
-        df_summary_display['Lahir: Tempat'] = '*****'
-        df_summary_display['Lahir: Tanggal'] = '*****'
+        # Sembunyikan data sensitif potensial
+        sensitive_cols = ['Lahir: Tempat', 'Lahir: Tanggal', 'Alamat', 'No. Telp', 'Org Tua: Ayah', 'Org Tua: Ibu']
+        for col in sensitive_cols:
+            if col in df_summary_display.columns:
+                 df_summary_display[col] = '*****'
 
         df_summary_display = df_summary_display.drop(columns=['id'], errors='ignore')
         df_summary_display.index = range(1, len(df_summary_display) + 1)
@@ -1615,7 +1691,7 @@ with tab_view:
 # Export
 with tab_export:
     st.subheader("⬇️ Export Excel (semua tab)")
-    st.write("Klik tombol di bawah untuk membuat file Excel dengan semua data.")
+    st.write("Klik tombol di bawah untuk membuat file Excel dengan semua data (nama sheet dan kolom dalam Bahasa Indonesia).")
     if st.button("Generate file Excel"):
         try:
             excel_bytes = build_excel_bytes()
@@ -1630,6 +1706,7 @@ with tab_export:
         try:
             tpl = build_bulk_template_bytes()
             st.download_button(label="📄 Download Template Bulk (.xlsx)", data=tpl, file_name="pwh_bulk_template.xlsx", mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
+            st.success("Template bulk (Bahasa Indonesia) siap diunduh.")
         except Exception as e: st.error(f"Gagal membuat template: {e}")
 
     with c2:
@@ -1639,5 +1716,12 @@ with tab_export:
                 result = import_bulk_excel(up)
                 msg = "Import selesai — " + ", ".join(f"{k}: {v}" for k, v in result.items())
                 st.success(msg)
+                # Clear cache setelah import bulk berhasil
+                fetch_all_wilayah_details.clear()
+                get_all_patients_for_selection.clear()
+                fetch_occupations_list.clear()
+                fetch_hospitals.clear()
+                st.rerun() # Refresh data di tabel tampilan
             except Exception as e:
                 st.error(f"Gagal import: {e}")
+                st.exception(e) # Tampilkan traceback error untuk debugging
