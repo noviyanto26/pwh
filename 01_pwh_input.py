@@ -156,18 +156,20 @@ def build_bulk_template_bytes() -> bytes:
     relations = RELATIONS or ["ayah","ibu","wali","pasien","lainnya"]
     occupations = fetch_occupations_list()
 
-    treatment_types = ["Prophylaxis", "On Demand"]
-    care_services = ["Rawat Jalan", "Rawat Inap"]
-    products = ["Plasma (FFP)","Cryoprecipitate","Konsentrat (plasma derived)","Konsentrat (rekombinan)","Konsentrat (prolonged half life)","Prothrombin Complex","DDAVP","Emicizumab (Hemlibra)","Konsentrat Bypassing Agent"]
+    treatment_types = ["", "Prophylaxis", "On Demand"] # Add blank option
+    care_services = ["", "Rawat Jalan", "Rawat Inap"] # Add blank option
+    products = ["", "Plasma (FFP)","Cryoprecipitate","Konsentrat (plasma derived)","Konsentrat (rekombinan)","Konsentrat (prolonged half life)","Prothrombin Complex","DDAVP","Emicizumab (Hemlibra)","Konsentrat Bypassing Agent"] # Add blank option
+    primary_bools = ["TRUE", "FALSE"] # Define list for Kontak Primary
 
-    # --- PERUBAHAN: Gunakan nama sheet dan kolom Bahasa Indonesia ---
+    # Gunakan nama sheet dan kolom Bahasa Indonesia
     template_sheets = {
         "Pasien": [
             ("Nama Lengkap", "text"), ("Tempat Lahir", "text"), ("Tanggal Lahir", "date"),
             ("NIK", "text"),
-            ("Gol. Darah", ("list", blood_groups)), ("Rhesus", ("list", rhesus)),
-            ("Jenis Kelamin", ("list", genders)),
-            ("Pekerjaan", ("list", occupations)), ("Pendidikan Terakhir", ("list", education_levels)),
+            ("Gol. Darah", ("list", "blood_groups")), ("Rhesus", ("list", "rhesus")), # Use named range
+            ("Jenis Kelamin", ("list", "genders")), # Use named range
+            ("Pekerjaan", ("list", "occupations")), # Use named range
+            ("Pendidikan Terakhir", ("list", "education_levels")), # Use named range
             ("Alamat", "text"),
             ("No. Ponsel", "text"), ("Propinsi", "text"), ("Kabupaten/Kota", "text"),
             ("Kecamatan", "text"), ("Kelurahan/Desa", "text"),
@@ -175,27 +177,28 @@ def build_bulk_template_bytes() -> bytes:
         ],
         "Diagnosa": [
             ("patient_id", "int"), ("Nama Lengkap", "text"),
-            ("Jenis Hemofilia", ("list", hemo_types)), ("Kategori", ("list", severities)),
+            ("Jenis Hemofilia", ("list", "hemo_types")), ("Kategori", ("list", "severities")), # Use named ranges
             ("Tgl Diagnosis", "date"), ("Sumber", "text"),
         ],
         "Inhibitor": [
             ("patient_id", "int"), ("Nama Lengkap", "text"),
-            ("Faktor", ("list", inhibitor_factors)), ("Titer (BU)", "number"),
+            ("Faktor", ("list", "inhibitor_factors")), ("Titer (BU)", "number"), # Use named range
             ("Tgl Ukur", "date"), ("Lab", "text"),
         ],
         "Virus Tes": [
             ("patient_id", "int"), ("Nama Lengkap", "text"),
-            ("Jenis Tes", ("list", virus_tests)), ("Hasil", ("list", test_results)),
+            ("Jenis Tes", ("list", "virus_tests")), ("Hasil", ("list", "test_results")), # Use named ranges
             ("Tgl Tes", "date"), ("Lab", "text"),
         ],
         "RS Penangan": [
             ("patient_id", "int"), ("Nama Lengkap", "text"),
             ("Nama RS", "text"), ("Kota RS", "text"), ("Provinsi RS", "text"),
             ("Tanggal Kunjungan", "date"), ("DPJP", "text"),
-            ("Jenis Penanganan", ("list", treatment_types)),
-            ("Layanan Rawat", ("list", care_services)),
+            ("Jenis Penanganan", ("list", "treatment_types_vals")), # Use new named range
+            ("Layanan Rawat", ("list", "care_services_vals")),    # Use new named range
             ("Frekuensi", "text"), ("Dosis", "text"),
-            ("Produk", ("list", products)), ("Merk", "text"),
+            ("Produk", ("list", "products_vals")),                # Use new named range
+            ("Merk", "text"),
         ],
         "Kematian": [
             ("patient_id", "int"), ("Nama Lengkap", "text"),
@@ -203,11 +206,107 @@ def build_bulk_template_bytes() -> bytes:
         ],
         "Kontak": [
             ("patient_id", "int"), ("Nama Lengkap", "text"),
-            ("Relasi", ("list", relations)), ("Nama Kontak", "text"),
-            ("No. Telp", "text"), ("Primary", ("list", ["TRUE","FALSE"])),
+            ("Relasi", ("list", "relations")), ("Nama Kontak", "text"), # Use named range
+            ("No. Telp", "text"),
+            ("Primary", ("list", "primary_vals")), # Use new named range for TRUE/FALSE
         ],
     }
-    # --- END PERUBAHAN ---
+
+    import io
+    from pandas import ExcelWriter
+
+    def _col_letter(n: int) -> str:
+        s = ""
+        while True:
+            n, r = divmod(n, 26)
+            s = chr(65 + r) + s
+            if n == 0: break
+            n -= 1
+        return s
+
+    bio = io.BytesIO()
+    with ExcelWriter(bio, engine="xlsxwriter", datetime_format="yyyy-mm-dd", date_format="yyyy-mm-dd") as writer:
+        wb = writer.book
+        fmt_header = wb.add_format({"bold": True, "bg_color": "#F2F2F2", "border": 1})
+        fmt_date = wb.add_format({"num_format": "yyyy-mm-dd"})
+        fmt_note = wb.add_format({"italic": True, "font_color": "#555555"})
+        fmt_h = wb.add_format({"bold": True, "font_size": 14})
+
+        ws_readme = wb.add_worksheet("README")
+        readme = [("Template Bulk Insert PWH", fmt_h),("Cara pakai:", None),("1) Isi setiap sheet sesuai kolom.", None),("2) Gunakan format tanggal yyyy-mm-dd.", None),("3) Kolom dropdown sudah dibatasi ke pilihan valid.", None),("4) Jika mengisi pasien baru, sheet lain boleh pakai kolom 'Nama Lengkap' untuk mapping.", None),("5) Jika sudah tahu patient_id, isi langsung untuk akurasi.", None),("6) 'Primary' (Kontak) gunakan TRUE/FALSE.", None)]
+        for r, (txt2, sty) in enumerate(readme): ws_readme.write(r, 0, txt2, sty)
+
+        # --- PERUBAHAN: Definisikan SEMUA list di sheet 'lookups' ---
+        ws_lk = wb.add_worksheet("lookups")
+        # Tambahkan list lokal ke look_cols
+        look_cols = [
+            ("blood_groups", blood_groups), ("rhesus", rhesus), ("genders", genders),
+            ("hemo_types", hemo_types), ("severities", severities), ("education_levels", education_levels),
+            ("inhibitor_factors", inhibitor_factors), ("virus_tests", virus_tests), ("test_results", test_results),
+            ("relations", relations), ("occupations", occupations),
+            ("treatment_types_vals", treatment_types), # Nama baru untuk named range
+            ("care_services_vals", care_services),     # Nama baru
+            ("products_vals", products),               # Nama baru
+            ("primary_vals", primary_bools)            # Nama baru
+        ]
+        for j, (name, items) in enumerate(look_cols):
+            ws_lk.write(0, j, name, fmt_header)
+            # Pastikan items adalah list sebelum iterasi
+            if isinstance(items, list):
+                for i, v in enumerate(items, start=1):
+                    ws_lk.write(i, j, v)
+                col_letter = _col_letter(j)
+                last_row = len(items) + 1
+                # Define name globaly
+                wb.define_name(name, f"=lookups!${col_letter}$2:${col_letter}${last_row}")
+            else:
+                st.warning(f"Lookup '{name}' expected a list, but got {type(items)}. Skipping definition.") # Tambah warning jika bukan list
+
+        max_rows = 1000 # Excel row limit for validation range (adjust if needed)
+        for sheet, cols in template_sheets.items():
+            ws = wb.add_worksheet(sheet)
+            ws.freeze_panes(1, 0)
+            for idx, (col_name, col_type) in enumerate(cols):
+                ws.write(0, idx, col_name, fmt_header)
+                ws.set_column(idx, idx, max(15, len(col_name) + 2))
+
+                if isinstance(col_type, tuple) and col_type[0] == "list":
+                    # --- PERUBAHAN: Semua list sekarang pakai named range dari 'lookups' ---
+                    named_range = col_type[1] # Ini *harus* string nama range (e.g., "blood_groups")
+                    if isinstance(named_range, str):
+                        source = f"={named_range}"
+                        ws.data_validation(1, idx, max_rows, idx, {"validate": "list", "source": source})
+                    else:
+                         st.warning(f"Invalid list source for '{col_name}' in sheet '{sheet}': Expected named range string.") # Warning jika format salah
+                    # --- Hapus logika pembuatan range lokal ---
+
+                elif col_type == "date":
+                    ws.set_column(idx, idx, 14, fmt_date)
+                # --- PERUBAHAN: Tambah kriteria untuk validasi angka ---
+                elif col_type == "int":
+                    ws.data_validation(1, idx, max_rows, idx, {
+                        "validate": "integer",
+                        "criteria": ">=",
+                        "value": 0, # Tahun kematian minimal 0 (atau sesuaikan jika perlu)
+                        "input_title": "Angka Bulat",
+                        "input_message": "Masukkan angka bulat positif.",
+                        "error_title": "Input Salah",
+                        "error_message": "Hanya angka bulat positif yang diizinkan."
+                    })
+                elif col_type == "number":
+                     ws.data_validation(1, idx, max_rows, idx, {
+                        "validate": "decimal",
+                        "criteria": ">=",
+                        "value": 0.0, # Titer BU minimal 0.0
+                        "input_title": "Angka Desimal",
+                        "input_message": "Masukkan angka desimal positif.",
+                        "error_title": "Input Salah",
+                        "error_message": "Hanya angka desimal positif yang diizinkan."
+                    })
+                # --- END PERUBAHAN ---
+
+            ws.write(max_rows + 2, 0, "Catatan: baris kosong akan diabaikan saat import.", fmt_note)
+    return bio.getvalue()
 
     import io
     from pandas import ExcelWriter
