@@ -1,7 +1,9 @@
-# 02_rekap_pwh.py (Perbaikan Cache)
+# 02_rekap_pwh.py (Perbaikan Cache dan Download Excel)
 import os
+import io  # <-- TAMBAHAN BARU
 import pandas as pd
 import streamlit as st
+from pandas import ExcelWriter  # <-- TAMBAHAN BARU
 from sqlalchemy import create_engine, text
 from sqlalchemy.engine import Engine
 import matplotlib.pyplot as plt
@@ -132,9 +134,27 @@ def plot_graph(summary_df: pd.DataFrame) -> plt.Figure:
     plt.tight_layout()
     return fig
 
-def convert_df_to_csv(df: pd.DataFrame) -> bytes:
-    """Mengonversi DataFrame ke format CSV untuk diunduh."""
-    return df.to_csv(index=True).encode('utf-8')
+# --- PERUBAHAN: Fungsi diubah dari CSV ke Excel ---
+def convert_df_to_excel(df: pd.DataFrame) -> bytes:
+    """Mengonversi DataFrame ke format Excel (xlsx) untuk diunduh."""
+    output = io.BytesIO()
+    with ExcelWriter(output, engine="xlsxwriter") as writer:
+        df.to_excel(writer, sheet_name="Rekapitulasi", index=True)
+        # Tambahkan auto-fit kolom
+        ws = writer.sheets["Rekapitulasi"]
+        # Fit kolom index
+        max_len_idx = max(df.index.astype(str).map(len).max(), len(df.index.name or "")) + 2
+        ws.set_column(0, 0, max_len_idx)
+        # Fit kolom data
+        for col_idx, col_name in enumerate(df.columns, 1): # Mulai dari 1
+            max_len = max(
+                (df[col_name].astype(str).map(len).max() if not df.empty else 0),
+                len(str(col_name))
+            ) + 2
+            ws.set_column(col_idx, col_idx, min(max_len, 50))
+            
+    return output.getvalue()
+# --- END PERUBAHAN ---
 
 # --- MAIN APP LOGIC ---
 db_url = _resolve_db_url()
@@ -152,13 +172,15 @@ else:
         st.dataframe(rekap_table.style.apply(lambda x: ['background-color: #e8f4f8' if x.name == 'Total' else '' for i in x], axis=1)
                                     .apply(lambda x: ['background-color: #e8f4f8' if x.name == 'Total' else '' for i in x], axis=0))
 
-        csv_data = convert_df_to_csv(rekap_table)
+        # --- PERUBAHAN: Tombol Download diubah ke Excel ---
+        excel_data = convert_df_to_excel(rekap_table)
         st.download_button(
-           label="📥 Download Rekapitulasi (CSV)",
-           data=csv_data,
-           file_name='rekapitulasi_hemofilia.csv',
-           mime='text/csv',
+            label="📥 Download Rekapitulasi (Excel)",
+            data=excel_data,
+            file_name='rekapitulasi_hemofilia.xlsx',
+            mime='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
         )
+        # --- END PERUBAHAN ---
         
         st.markdown("---")
 
