@@ -1,4 +1,4 @@
-# 01_pwh_input.py (Dengan tambahan kolom NIK, autoload Propinsi, dan autoload Cabang HMHI)
+# 01_pwh_input.py (Dengan tambahan kolom NIK, autoload Propinsi, autoload Cabang HMHI, dan layout rapi)
 import os
 import io
 from datetime import date
@@ -866,14 +866,19 @@ with tab_pat:
                 city_name = match.iloc[0]['city_name']
                 province_name = match.iloc[0]['province_name']
 
-        col_kec, col_city = st.columns(2)
-        with col_kec:
+        # --- PERUBAHAN LAYOUT WILAYAH (START) ---
+        col_vil, col_dis = st.columns(2)
+        with col_vil:
+            st.text_input("Kelurahan (otomatis)", value=village_name, disabled=True)
+        with col_dis:
             st.text_input("Kecamatan (otomatis)", value=district_name, disabled=True)
+        
+        col_city, col_prov = st.columns(2)
         with col_city:
             st.text_input("Kabupaten/Kota (otomatis)", value=city_name, disabled=True)
-        col_prov, _ = st.columns(2) 
         with col_prov:
             st.text_input("Propinsi (otomatis)", value=province_name, disabled=True)
+        # --- PERUBAHAN LAYOUT WILAYAH (END) ---
         # --- END: Logika Wilayah Autofill ---
 
         
@@ -890,12 +895,15 @@ with tab_pat:
 
         cabang_idx = get_safe_index(cabang_list, default_cabang)
 
-        # Buat Selectbox untuk HMHI Cabang
-        selected_cabang = st.selectbox(
-            "HMHI Cabang",
-            cabang_list,
-            index=cabang_idx
-        )
+        # --- PERUBAHAN LAYOUT HMHI (START) ---
+        col_cabang, col_cakupan = st.columns(2)
+        with col_cabang:
+            # Buat Selectbox untuk HMHI Cabang
+            selected_cabang = st.selectbox(
+                "HMHI Cabang",
+                cabang_list,
+                index=cabang_idx
+            )
 
         # Logika Autoload Kota Cakupan
         if selected_cabang:
@@ -906,8 +914,10 @@ with tab_pat:
         elif pat_data and not selected_cabang: # Jika tidak ada yg dipilih, tapi mode edit, isi data lama
              kota_cakupan_val = pat_data.get('kota_cakupan', '')
         
-        # Buat text input disabled untuk Kota Cakupan
-        st.text_input("Kota Cakupan Cabang (otomatis)", value=kota_cakupan_val, disabled=True)
+        with col_cakupan:
+            # Buat text input disabled untuk Kota Cakupan
+            st.text_input("Kota Cakupan Cabang (otomatis)", value=kota_cakupan_val, disabled=True)
+        # --- PERUBAHAN LAYOUT HMHI (END) ---
         # --- END: Logika HMHI Cabang Autofill (BARU) ---
 
 
