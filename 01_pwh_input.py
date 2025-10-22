@@ -36,6 +36,7 @@ def build_excel_bytes() -> bytes:
     p.city,
     p.cabang, 
     p.kota_cakupan,
+    p.note,
     p.created_at
 FROM pwh.patients p
 LEFT JOIN pwh.patient_age pa ON pa.id = p.id
@@ -460,11 +461,11 @@ RHESUS       = [""] + (fetch_enum_vals("rhesus_enum")        or ["+","-"])
 GENDERS      = ["", "Laki-laki", "Perempuan"]
 EDUCATION_LEVELS = [""] + (fetch_enum_vals("education_enum") or ["Tidak sekolah", "SD", "SMP", "SMA/SMK", "Diploma", "S1", "S2", "S3"])
 HEMO_TYPES   = fetch_enum_vals("hemo_type_enum")      or ["A","B","vWD","Other"]
-SEVERITIES   = fetch_enum_vals("severity_enum")       or ["Ringan","Sedang","Berat","Tidak diketahui"]
+SEVERITIES   = fetch_enum_vals("severity_enum")         or ["Ringan","Sedang","Berat","Tidak diketahui"]
 INHIB_FACTORS= fetch_enum_vals("inhibitor_factor_enum") or ["FVIII","FIX"]
-VIRUS_TESTS  = fetch_enum_vals("virus_test_enum")     or ["HBsAg","Anti-HCV","HIV"]
+VIRUS_TESTS  = fetch_enum_vals("virus_test_enum")       or ["HBsAg","Anti-HCV","HIV"]
 TEST_RESULTS = fetch_enum_vals("test_result_enum")    or ["positive","negative","indeterminate","unknown"]
-RELATIONS    = fetch_enum_vals("relation_enum")       or ["ayah","ibu","wali","pasien","lainnya"]
+RELATIONS    = fetch_enum_vals("relation_enum")         or ["ayah","ibu","wali","pasien","lainnya"]
 PREFERRED_SEVERITY_ORDER = ["Ringan", "Sedang", "Berat", "Tidak diketahui"]
 SEVERITY_CHOICES = PREFERRED_SEVERITY_ORDER if all(x in SEVERITIES for x in PREFERRED_SEVERITY_ORDER) else SEVERITIES
 TREATMENT_TYPES = ["", "Prophylaxis", "On Demand"]
@@ -478,7 +479,7 @@ def _severity_default_index(choices: list[str]) -> int:
 # ------------------------------------------------------------------------------
 # Alias kolom (header) untuk tampilan
 # ------------------------------------------------------------------------------
-ALIAS_PATIENTS = {"full_name": "Nama Lengkap","birth_place": "Tempat Lahir","birth_date": "Tanggal Lahir", "nik": "NIK", "age_years": "Umur (tahun)", "blood_group": "Gol. Darah","rhesus": "Rhesus", "gender": "Jenis Kelamin", "occupation": "Pekerjaan", "education": "Pendidikan Terakhir", "address": "Alamat", "village": "Kelurahan/Desa", "district": "Kecamatan", "phone": "No. Ponsel","province": "Propinsi","city": "Kabupaten/Kota", "cabang": "HMHI Cabang", "kota_cakupan": "Kota Cakupan Cabang", "created_at": "Dibuat"}
+ALIAS_PATIENTS = {"full_name": "Nama Lengkap","birth_place": "Tempat Lahir","birth_date": "Tanggal Lahir", "nik": "NIK", "age_years": "Umur (tahun)", "blood_group": "Gol. Darah","rhesus": "Rhesus", "gender": "Jenis Kelamin", "occupation": "Pekerjaan", "education": "Pendidikan Terakhir", "address": "Alamat", "village": "Kelurahan/Desa", "district": "Kecamatan", "phone": "No. Ponsel","province": "Propinsi","city": "Kabupaten/Kota", "cabang": "HMHI Cabang", "kota_cakupan": "Kota Cakupan Cabang", "note": "Catatan", "created_at": "Dibuat"}
 ALIAS_DIAG = {"full_name": "Nama Lengkap","hemo_type": "Jenis Hemofilia","severity": "Kategori","diagnosed_on": "Tgl Diagnosis","source": "Sumber"}
 ALIAS_INH = {"full_name": "Nama Lengkap","factor": "Faktor","titer_bu": "Titer (BU)","measured_on": "Tgl Ukur","lab": "Lab"}
 ALIAS_VIRUS = {"full_name": "Nama Lengkap","test_type": "Jenis Tes","result": "Hasil","tested_on": "Tgl Tes","lab": "Lab"}
@@ -679,40 +680,40 @@ def import_bulk_excel(file) -> dict:
     results = {"Pasien": len(inserted_patients)}
     sheet_configs = {
         "Diagnosa": ("diagnosa", # nama sheet lowercase
-                      ["patient_id","full_name","hemo_type","severity","diagnosed_on","source"], # nama kolom internal
-                      MAP_DIAG, # Peta pembalikan
-                      lambda r, pid: insert_diagnosis(pid, _safe_str(r.get("hemo_type")), _safe_str(r.get("severity")), _to_date(r.get("diagnosed_on")), _safe_str(r.get("source")))),
+                       ["patient_id","full_name","hemo_type","severity","diagnosed_on","source"], # nama kolom internal
+                       MAP_DIAG, # Peta pembalikan
+                       lambda r, pid: insert_diagnosis(pid, _safe_str(r.get("hemo_type")), _safe_str(r.get("severity")), _to_date(r.get("diagnosed_on")), _safe_str(r.get("source")))),
         "Inhibitor": ("inhibitor",
-                       ["patient_id","full_name","factor","titer_bu","measured_on","lab"],
-                       MAP_INH,
-                       lambda r, pid: insert_inhibitor(pid, _safe_str(r.get("factor")), pd.to_numeric(r.get("titer_bu"), errors='coerce'), _to_date(r.get("measured_on")), _safe_str(r.get("lab")))),
+                        ["patient_id","full_name","factor","titer_bu","measured_on","lab"],
+                        MAP_INH,
+                        lambda r, pid: insert_inhibitor(pid, _safe_str(r.get("factor")), pd.to_numeric(r.get("titer_bu"), errors='coerce'), _to_date(r.get("measured_on")), _safe_str(r.get("lab")))),
         "Virus Tes": ("virus tes",
-                       ["patient_id","full_name","test_type","result","tested_on","lab"],
-                       MAP_VIRUS,
-                       lambda r, pid: insert_virus_test(pid, _safe_str(r.get("test_type")), _safe_str(r.get("result")), _to_date(r.get("tested_on")), _safe_str(r.get("lab")))),
+                        ["patient_id","full_name","test_type","result","tested_on","lab"],
+                        MAP_VIRUS,
+                        lambda r, pid: insert_virus_test(pid, _safe_str(r.get("test_type")), _safe_str(r.get("result")), _to_date(r.get("tested_on")), _safe_str(r.get("lab")))),
         "RS Penangan": ("rs penangan",
-                         ["patient_id", "full_name", "name_hospital", "city_hospital", "province_hospital", "date_of_visit", "doctor_in_charge", "treatment_type", "care_services", "frequency", "dose", "product", "merk"],
-                         MAP_HOSP,
-                         lambda r, pid: insert_treatment_hospital({
-                             "patient_id": pid, "name_hospital": _safe_str(r.get("name_hospital")), "city_hospital": _safe_str(r.get("city_hospital")), "province_hospital": _safe_str(r.get("province_hospital")),
-                             "date_of_visit": _to_date(r.get("date_of_visit")), "doctor_in_charge": _safe_str(r.get("doctor_in_charge")),
-                             "treatment_type": _safe_str(r.get("treatment_type")), "care_services": _safe_str(r.get("care_services")), "frequency": _safe_str(r.get("frequency")), "dose": _safe_str(r.get("dose")),
-                             "product": _safe_str(r.get("product")), "merk": _safe_str(r.get("merk"))
-                         })
-                        ),
+                          ["patient_id", "full_name", "name_hospital", "city_hospital", "province_hospital", "date_of_visit", "doctor_in_charge", "treatment_type", "care_services", "frequency", "dose", "product", "merk"],
+                          MAP_HOSP,
+                          lambda r, pid: insert_treatment_hospital({
+                              "patient_id": pid, "name_hospital": _safe_str(r.get("name_hospital")), "city_hospital": _safe_str(r.get("city_hospital")), "province_hospital": _safe_str(r.get("province_hospital")),
+                              "date_of_visit": _to_date(r.get("date_of_visit")), "doctor_in_charge": _safe_str(r.get("doctor_in_charge")),
+                              "treatment_type": _safe_str(r.get("treatment_type")), "care_services": _safe_str(r.get("care_services")), "frequency": _safe_str(r.get("frequency")), "dose": _safe_str(r.get("dose")),
+                              "product": _safe_str(r.get("product")), "merk": _safe_str(r.get("merk"))
+                          })
+                         ),
         "Kematian": ("kematian",
-                      ["patient_id", "full_name", "cause_of_death", "year_of_death"],
-                      MAP_DEATH,
-                      lambda r, pid: insert_death_record({
-                          "patient_id": pid,
-                          "cause_of_death": _safe_str(r.get("cause_of_death")),
-                          "year_of_death": pd.to_numeric(r.get("year_of_death"), errors='coerce')
-                      })
-                     ),
+                       ["patient_id", "full_name", "cause_of_death", "year_of_death"],
+                       MAP_DEATH,
+                       lambda r, pid: insert_death_record({
+                           "patient_id": pid,
+                           "cause_of_death": _safe_str(r.get("cause_of_death")),
+                           "year_of_death": pd.to_numeric(r.get("year_of_death"), errors='coerce')
+                       })
+                      ),
         "Kontak": ("kontak",
-                      ["patient_id","full_name","relation","name","phone","is_primary"],
-                      MAP_CONTACT,
-                      lambda r, pid: insert_contact(pid, _safe_str(r.get("relation")), _safe_str(r.get("name")), _safe_str(r.get("phone")), _to_bool(r.get("is_primary")))),
+                       ["patient_id","full_name","relation","name","phone","is_primary"],
+                       MAP_CONTACT,
+                       lambda r, pid: insert_contact(pid, _safe_str(r.get("relation")), _safe_str(r.get("name")), _safe_str(r.get("phone")), _to_bool(r.get("is_primary")))),
     }
 
     for key, (sheet_name_lowercase, internal_cols, reverse_map, insert_func) in sheet_configs.items():
@@ -749,7 +750,7 @@ def clear_session_state(prefix):
         del st.session_state[k]
 
 def auto_pick_latest_for_edit(df, state_key: str, table_fullname: str,
-                              id_col: str = "id", order_cols: list[str] | None = None):
+                                id_col: str = "id", order_cols: list[str] | None = None):
     # Abaikan jika tidak ada data
     if df is None or getattr(df, "empty", True):
         return
@@ -1129,7 +1130,7 @@ with tab_diag:
         severity_idx = get_safe_index(SEVERITY_CHOICES, diag_data.get('severity'))
         severity = st.selectbox("Kategori", SEVERITY_CHOICES, index=severity_idx)
         diagnosed_on_val = pd.to_datetime(diag_data.get('diagnosed_on')).date() if pd.notna(diag_data.get('diagnosed_on')) else None
-        diagnosed_on = st.date_input("Tanggal Diagnosis", value=diagnosed_on_val, format="YYYY-MM-DD")
+        diagnosed_on = st.date_input("Tanggal Diagnosis", value=diagnosed_on_val, format="YYYY-MM-DD", min_value=date(1920, 1, 1))
         source = st.text_input("Sumber (opsional)", value=diag_data.get('source', ''))
         
         sdiag_label = "Perbarui Diagnosis" if diag_data else "Simpan Diagnosis Baru"
@@ -1238,7 +1239,7 @@ with tab_inh:
         factor = st.selectbox("Faktor", INHIB_FACTORS, index=factor_idx)
         titer_bu = st.number_input("Titer (BU)", min_value=0.0, step=0.1, value=float(inh_data.get('titer_bu', 0.0)))
         measured_on_val = pd.to_datetime(inh_data.get('measured_on')).date() if pd.notna(inh_data.get('measured_on')) else None
-        measured_on = st.date_input("Tanggal Ukur", value=measured_on_val, format="YYYY-MM-DD")
+        measured_on = st.date_input("Tanggal Ukur", value=measured_on_val, format="YYYY-MM-DD", min_value=date(1920, 1, 1))
         lab = st.text_input("Lab (opsional)", value=inh_data.get('lab', ''))
         sinh_label = "Perbarui Riwayat" if inh_data else "Simpan Riwayat Baru"
         sinh = st.form_submit_button(f"💾 {sinh_label}", type="primary")
@@ -1255,7 +1256,7 @@ with tab_inh:
             st.success("Riwayat inhibitor ditambahkan.")
             st.rerun()
         else:
-                 if not inh_data: st.warning("Silakan pilih pasien terlebih dahulu.")
+                if not inh_data: st.warning("Silakan pilih pasien terlebih dahulu.")
 
     st.markdown("---")
     st.markdown("### 📋 Data Inhibitor Terbaru")
@@ -1347,7 +1348,7 @@ with tab_virus:
         result_idx = get_safe_index(TEST_RESULTS, virus_data.get('result'))
         result = st.selectbox("Hasil", TEST_RESULTS, index=result_idx)
         tested_on_val = pd.to_datetime(virus_data.get('tested_on')).date() if pd.notna(virus_data.get('tested_on')) else None
-        tested_on = st.date_input("Tanggal Tes", value=tested_on_val, format="YYYY-MM-DD")
+        tested_on = st.date_input("Tanggal Tes", value=tested_on_val, format="YYYY-MM-DD", min_value=date(1920, 1, 1))
         lab = st.text_input("Lab (opsional)", value=virus_data.get('lab', ''))
         svirus_label = "Perbarui Hasil Tes" if virus_data else "Simpan Hasil Tes Baru"
         svirus = st.form_submit_button(f"💾 {svirus_label}", type="primary")
@@ -1465,7 +1466,7 @@ with tab_hospital:
         col_date, col_doc = st.columns(2)
         with col_date:
             visit_date_val = pd.to_datetime(hosp_data.get('date_of_visit')).date() if pd.notna(hosp_data.get('date_of_visit')) else None
-            date_of_visit = st.date_input("Tanggal Kunjungan", value=visit_date_val, format="YYYY-MM-DD")
+            date_of_visit = st.date_input("Tanggal Kunjungan", value=visit_date_val, format="YYYY-MM-DD", min_value=date(1920, 1, 1))
         with col_doc:
             doctor_in_charge = st.text_input("DPJP", value=hosp_data.get('doctor_in_charge', ''))
 
@@ -1701,7 +1702,7 @@ with tab_contacts:
         if not name.strip():
             st.error("Nama Kontak wajib diisi.")
         elif not relation:
-                 st.error("Relasi wajib diisi.")
+                st.error("Relasi wajib diisi.")
         else:
             payload = {"relation": relation, "name": name, "phone": (phone or "").strip() or None, "is_primary": is_primary}
             if cont_data:
@@ -1789,7 +1790,7 @@ with tab_view:
         sensitive_cols = ['Lahir: Tempat', 'Lahir: Tanggal', 'Alamat', 'No. Telp', 'Org Tua: Ayah', 'Org Tua: Ibu']
         for col in sensitive_cols:
             if col in df_summary_display.columns:
-                 df_summary_display[col] = '*****'
+                df_summary_display[col] = '*****'
 
         df_summary_display = df_summary_display.drop(columns=['id'], errors='ignore')
         df_summary_display.index = range(1, len(df_summary_display) + 1)
