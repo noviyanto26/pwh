@@ -1,4 +1,4 @@
-# 01_pwh_input.py (Dengan tambahan kolom NIK, autoload Propinsi, autoload Cabang HMHI, dan layout rapi v2)
+# 01_pwh_input.py (Dengan tambahan kolom NIK, autoload Propinsi, autoload Cabang HMHI, dan layout rapi v3)
 import os
 import io
 from datetime import date
@@ -1064,9 +1064,12 @@ LIMIT 200;
         dfp_display['address'] = dfp_display['address'].apply(lambda x: '*****' if pd.notna(x) and str(x).strip() else x)
         dfp_display['village'] = dfp_display['village'].apply(lambda x: '*****' if pd.notna(x) and str(x).strip() else x)
         dfp_display['district'] = dfp_display['district'].apply(lambda x: '*****' if pd.notna(x) and str(x).strip() else x)
-        # Sembunyikan data cabang (BARU)
-        dfp_display['cabang'] = dfp_display['cabang'].apply(lambda x: '*****' if pd.notna(x) and str(x).strip() else x)
-        dfp_display['kota_cakupan'] = dfp_display['kota_cakupan'].apply(lambda x: '*****' if pd.notna(x) and str(x).strip() else x)
+        
+        # --- PERUBAHAN DI SINI ---
+        # Data cabang dan kota cakupan TIDAK disembunyikan lagi
+        # dfp_display['cabang'] = dfp_display['cabang'].apply(lambda x: '*****' if pd.notna(x) and str(x).strip() else x)
+        # dfp_display['kota_cakupan'] = dfp_display['kota_cakupan'].apply(lambda x: '*****' if pd.notna(x) and str(x).strip() else x)
+        # --- END PERUBAHAN ---
         
         dfp_display = dfp_display.drop(columns=['id'], errors='ignore')
         dfp_display.index = range(1, len(dfp_display) + 1)
