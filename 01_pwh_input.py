@@ -1061,9 +1061,9 @@ LIMIT 200;
         dfp_display['nik'] = dfp_display['nik'].apply(lambda x: '*****' if pd.notna(x) and str(x).strip() else x)
         dfp_display['phone'] = dfp_display['phone'].apply(lambda x: '*****' if pd.notna(x) and str(x).strip() else x)
         # Sembunyikan data alamat lengkap di tampilan tabel utama
-        # dfp_display['address'] = dfp_display['address'].apply(lambda x: '*****' if pd.notna(x) and str(x).strip() else x)
-        # dfp_display['village'] = dfp_display['village'].apply(lambda x: '*****' if pd.notna(x) and str(x).strip() else x)
-        # dfp_display['district'] = dfp_display['district'].apply(lambda x: '*****' if pd.notna(x) and str(x).strip() else x)
+        # dfp_display['address'] = dfp_display['address'].apply(lambda x: '*****' if pd.notna(x) and str(x).strip() else x)
+        # dfp_display['village'] = dfp_display['village'].apply(lambda x: '*****' if pd.notna(x) and str(x).strip() else x)
+        # dfp_display['district'] = dfp_display['district'].apply(lambda x: '*****' if pd.notna(x) and str(x).strip() else x)
         
         # --- PERUBAHAN DI SINI ---
         # Data cabang dan kota cakupan TIDAK disembunyikan lagi
