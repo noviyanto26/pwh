@@ -47,21 +47,37 @@ run_query = _build_query_runner()
 # DATA REKAP
 # =========================
 def load_rekap() -> pd.DataFrame:
-    # MODIFIKASI: Query diubah untuk mengambil dari pwh.hmhi_cabang
-    # Asumsi: tabel ini memiliki kolom 'cabang', 'jumlah_pasien', 'kota', 'propinsi'
+    # MODIFIKASI: Query diubah untuk MENGHITUNG pasien dari pwh.patients
+    # dan MENGGABUNGKAN (JOIN) dengan pwh.hmhi_cabang untuk info lokasi.
+    # Asumsi nama kolom di database adalah lowercase (cabang, kota, propinsi).
     sql = """
         SELECT
-            "cabang",
-            "jumlah_pasien",
-            "kota",
-            "propinsi"
-        FROM pwh.hmhi_cabang
-        WHERE "jumlah_pasien" > 0
-        ORDER BY "jumlah_pasien" DESC, "cabang" ASC;
+            cab.cabang,
+            cab.kota,
+            cab.propinsi,
+            COALESCE(pat_counts.jumlah, 0) AS jumlah_pasien
+        FROM
+            pwh.hmhi_cabang AS cab
+        LEFT JOIN (
+            SELECT
+                cabang,
+                COUNT(*) AS jumlah
+            FROM
+                pwh.patients
+            WHERE
+                cabang IS NOT NULL
+            GROUP BY
+                cabang
+        ) AS pat_counts ON cab.cabang = pat_counts.cabang
+        WHERE
+            COALESCE(pat_counts.jumlah, 0) > 0 -- Hanya tampilkan cabang yang ada pasien
+        ORDER BY
+            jumlah_pasien DESC, cab.cabang ASC;
     """
     df = run_query(sql)
     
     # MODIFIKASI: Ganti nama kolom agar sesuai dengan logika skrip selanjutnya
+    # Nama kolom dari SQL (kiri) harus sama persis (case-sensitive) dengan hasil query
     df = df.rename(columns={
         "cabang": "Cabang",
         "jumlah_pasien": "Jumlah Pasien",
@@ -162,7 +178,7 @@ def _is_valid_coord(v) -> bool:
 # =========================
 df = load_rekap()
 if df.empty:
-    st.warning("Data rekap tidak ditemukan. Pastikan tabel pwh.hmhi_cabang tersedia dan berisi data.")
+    st.warning("Data rekap tidak ditemukan. Pastikan tabel pwh.hmhi_cabang dan pwh.patients berisi data.")
     st.stop()
 
 # MODIFIKASI: Hapus langkah groupby. Asumsikan df sudah per cabang.
@@ -238,4 +254,4 @@ if not grouped_valid.empty:
     )
 
 # MODIFIKASI: Ubah sumber data di caption
-st.caption("Sumber: tabel **pwh.hmhi_cabang**. Koordinat diambil dari tabel lokal `public.kota_geo` (jika ada), fallback kamus statis, dan *opsional* geocoding online Nominatim/OSM. Jika tidak ada MAPBOX_TOKEN, otomatis memakai OSM default. Label jumlah pasien ditampilkan di titik cabang.")
+st.caption("Sumber: tabel **pwh.hmhi_cabang** (lokasi) dan **pwh.patients** (hitungan). Koordinat diambil dari tabel lokal `public.kota_geo` (jika ada), fallback kamus statis, dan *opsional* geocoding online Nominatim/OSM. Jika tidak ada MAPBOX_TOKEN, otomatis memakai OSM default. Label jumlah pasien ditampilkan di titik cabang.")
