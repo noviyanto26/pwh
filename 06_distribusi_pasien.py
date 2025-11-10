@@ -10,11 +10,11 @@ from sqlalchemy import create_engine, text
 # KONFIGURASI HALAMAN
 # =========================
 st.set_page_config(
-    page_title="Peta Jumlah Pasien per Kota",
+    page_title="Peta Jumlah Pasien per Cabang",  # MODIFIKASI: Judul diubah
     page_icon="🗺️",
     layout="wide"
 )
-st.title("🗺️ Peta Jumlah Pasien per Kota (Hemofilia)")
+st.title("🗺️ Peta Jumlah Pasien per Cabang (Hemofilia)") # MODIFIKASI: Judul diubah
 
 # =========================
 # UTIL KONEKSI (dual-mode)
@@ -47,16 +47,28 @@ run_query = _build_query_runner()
 # DATA REKAP
 # =========================
 def load_rekap() -> pd.DataFrame:
+    # MODIFIKASI: Query diubah untuk mengambil dari pwh.hmhi_cabang
+    # Asumsi: tabel ini memiliki kolom 'cabang', 'jumlah_pasien', 'kota', 'propinsi'
     sql = """
         SELECT
-            "Nama Rumah Sakit",
-            "Jumlah Pasien",
-            "Kota",
-            "Propinsi"
-        FROM pwh.v_hospital_summary
-        ORDER BY "Jumlah Pasien" DESC, "Nama Rumah Sakit" ASC;
+            "cabang",
+            "jumlah_pasien",
+            "kota",
+            "propinsi"
+        FROM pwh.hmhi_cabang
+        WHERE "jumlah_pasien" > 0
+        ORDER BY "jumlah_pasien" DESC, "cabang" ASC;
     """
     df = run_query(sql)
+    
+    # MODIFIKASI: Ganti nama kolom agar sesuai dengan logika skrip selanjutnya
+    df = df.rename(columns={
+        "cabang": "Cabang",
+        "jumlah_pasien": "Jumlah Pasien",
+        "kota": "Kota",
+        "propinsi": "Propinsi"
+    })
+    
     for c in ["Kota", "Propinsi"]:
         if c in df.columns:
             df[c] = df[c].astype(str).str.strip()
@@ -85,7 +97,7 @@ use_online_geocoding = st.sidebar.toggle(
     help="Jika dinyalakan, kota yang tidak ditemukan di referensi lokal akan dicari via OSM (butuh internet)."
 )
 heatmap_radius = st.sidebar.slider("Radius Heatmap", min_value=10, max_value=80, value=40, step=5)
-min_count = st.sidebar.number_input("Filter minimum jumlah pasien per kota", min_value=0, value=0, step=1)
+min_count = st.sidebar.number_input("Filter minimum jumlah pasien per cabang", min_value=0, value=0, step=1) # MODIFIKASI: Teks diubah
 
 # =========================
 # UTIL GEOCODING
@@ -150,10 +162,11 @@ def _is_valid_coord(v) -> bool:
 # =========================
 df = load_rekap()
 if df.empty:
-    st.warning("Data rekap tidak ditemukan. Pastikan view pwh.v_hospital_summary tersedia.")
+    st.warning("Data rekap tidak ditemukan. Pastikan tabel pwh.hmhi_cabang tersedia dan berisi data.")
     st.stop()
 
-grouped = df.groupby(["Kota", "Propinsi"], dropna=False)["Jumlah Pasien"].sum().reset_index()
+# MODIFIKASI: Hapus langkah groupby. Asumsikan df sudah per cabang.
+grouped = df.copy() 
 if min_count > 0:
     grouped = grouped[grouped["Jumlah Pasien"] >= min_count].copy()
 
@@ -169,10 +182,13 @@ grouped_valid = grouped_valid.dropna(subset=["lat", "lon"])
 
 if not grouped_valid.empty:
     grouped_valid["radius"] = (grouped_valid["Jumlah Pasien"] ** 0.5) * 2000
-    grouped_valid["label"] = grouped_valid.apply(lambda r: f"{r['Kota']} : {int(r['Jumlah Pasien'])}", axis=1)
+    # MODIFIKASI: Ubah label untuk menampilkan nama Cabang
+    grouped_valid["label"] = grouped_valid.apply(lambda r: f"{r['Cabang']} : {int(r['Jumlah Pasien'])}", axis=1)
 
-st.subheader(f"📋 Rekap Per Kota (koordinat valid: {len(grouped_valid)}/{len(grouped)})")
-st.dataframe(grouped_valid[["Kota", "Propinsi", "Jumlah Pasien", "lat", "lon"]].sort_values("Jumlah Pasien", ascending=False), use_container_width=True, hide_index=True)
+# MODIFIKASI: Ubah judul subheader
+st.subheader(f"📋 Rekap Per Cabang (koordinat valid: {len(grouped_valid)}/{len(grouped)})")
+# MODIFIKASI: Tambahkan kolom 'Cabang' ke dataframe
+st.dataframe(grouped_valid[["Cabang", "Kota", "Propinsi", "Jumlah Pasien", "lat", "lon"]].sort_values("Jumlah Pasien", ascending=False), use_container_width=True, hide_index=True)
 
 def_view = pdk.ViewState(latitude=-2.5, longitude=118.0, zoom=4.2, pitch=0)
 heatmap_layer = pdk.Layer("HeatmapLayer", data=grouped_valid, get_position='[lon, lat]', get_weight="Jumlah Pasien", radius_pixels=int(heatmap_radius))
@@ -196,7 +212,8 @@ text_layer = pdk.Layer(
     billboard=True
 )
 
-tooltip = {"html": "<b>{Kota}, {Propinsi}</b><br/>Jumlah Pasien: {Jumlah Pasien}", "style": {"backgroundColor": "white", "color": "black"}}
+# MODIFIKASI: Ubah tooltip untuk menyertakan nama Cabang
+tooltip = {"html": "<b>{Cabang}</b><br/>({Kota}, {Propinsi})<br/>Jumlah Pasien: {Jumlah Pasien}", "style": {"backgroundColor": "white", "color": "black"}}
 
 def get_map_style():
     token = st.secrets.get("MAPBOX_TOKEN", os.getenv("MAPBOX_TOKEN"))
@@ -207,11 +224,18 @@ def get_map_style():
 
 st.subheader("🗺️ Peta Persebaran")
 if grouped_valid.empty:
-    st.info("Belum ada koordinat kota yang valid. Pastikan tabel public.kota_geo terisi atau aktifkan geocoding online.")
+    st.info("Belum ada koordinat cabang yang valid. Pastikan tabel pwh.hmhi_cabang memiliki data kota/propinsi yang benar, tabel public.kota_geo terisi, atau aktifkan geocoding online.")
 else:
     st.pydeck_chart(pdk.Deck(map_style=get_map_style(), initial_view_state=def_view, layers=[heatmap_layer, scatter_layer, text_layer], tooltip=tooltip))
 
 if not grouped_valid.empty:
-    st.download_button("📥 Download Data Per Kota (CSV)", data=grouped_valid[["Kota", "Propinsi", "Jumlah Pasien", "lat", "lon"]].to_csv(index=False).encode("utf-8"), file_name="rekap_pasien_per_kota.csv", mime="text/csv")
+    # MODIFIKASI: Ubah nama file dan data yang diunduh
+    st.download_button(
+        "📥 Download Data Per Cabang (CSV)", 
+        data=grouped_valid[["Cabang", "Kota", "Propinsi", "Jumlah Pasien", "lat", "lon"]].to_csv(index=False).encode("utf-8"), 
+        file_name="rekap_pasien_per_cabang.csv", 
+        mime="text/csv"
+    )
 
-st.caption("Sumber: view **pwh.v_hospital_summary**. Koordinat diambil dari tabel lokal `public.kota_geo` (jika ada), fallback kamus statis, dan *opsional* geocoding online Nominatim/OSM. Jika tidak ada MAPBOX_TOKEN, otomatis memakai OSM default. Label jumlah pasien ditampilkan di titik kota.")
+# MODIFIKASI: Ubah sumber data di caption
+st.caption("Sumber: tabel **pwh.hmhi_cabang**. Koordinat diambil dari tabel lokal `public.kota_geo` (jika ada), fallback kamus statis, dan *opsional* geocoding online Nominatim/OSM. Jika tidak ada MAPBOX_TOKEN, otomatis memakai OSM default. Label jumlah pasien ditampilkan di titik cabang.")
