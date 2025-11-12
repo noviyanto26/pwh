@@ -68,6 +68,7 @@ MENU_ITEMS = {
     # >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>
     # Tambahan baru: Rekap per Provinsi (mengarah ke file 07_rekap_propinsi.py)
     "🗺️ Rekapitulasi per Provinsi (Berdasarkan Domisili)": "07_rekap_propinsi.py",
+    "🗺️ Distribusi Pasien per Kota (Berdasarkan RS Penangan)": "08_distribusi_rs.py",
     # <<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<
 }
 
