@@ -175,10 +175,10 @@ if not grouped_valid.empty:
 # =========================
 # TAMPILAN STREAMLIT
 # =========================
-st.subheader(f"📋 Rekap Per Propinsi (valid: {len(grouped_valid)}/{len(grouped)})")
+st.subheader(f"📋 Rekap Per Cabang HMHI (valid: {len(grouped_valid)}/{len(grouped)})")
 
 # Tampilkan tabel data
-display_cols = ["Propinsi", "Jumlah Pasien"]
+display_cols = ["Cabang HMHI", "Jumlah Pasien"]
 if not grouped_valid.empty:
     st.dataframe(grouped_valid[display_cols + ["lat", "lon"]].sort_values("Jumlah Pasien", ascending=False), use_container_width=True, hide_index=True)
 else:
